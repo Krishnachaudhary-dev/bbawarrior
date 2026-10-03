@@ -1,4 +1,4 @@
-import { describeError, isConfigured, readState, realtimeConfig } from './_db.js';
+import { describeError, isConfigured, keyRoleHint, readState, realtimeConfig, secretKey } from './_db.js';
 
 /**
  * GET /api/state
@@ -7,8 +7,8 @@ import { describeError, isConfigured, readState, realtimeConfig } from './_db.js
  *
  * The response also carries the public realtime config, which is what lets the
  * browser open the doorbell and pick up an admin save at once instead of waiting
- * for the next poll. It is the anon key, which is public by design and still
- * refused by row level security.
+ * for the next poll. It is the publishable key, which is public by design and
+ * still refused by row level security.
  *
  * When Supabase is not configured it reports offline rather than failing, so each
  * app falls back to its own local copy instead of breaking. GET /api/health names
@@ -30,8 +30,13 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({ ok: true, ...state, syncedAt: Date.now(), realtime: realtimeConfig() });
   } catch (err) {
-    /* The browser gets a plain sentence, the Vercel log gets the actual failure. */
-    console.error('[api/state] read failed', JSON.stringify(describeError(err)));
+    /* The browser gets a plain sentence, the Vercel log gets the actual failure
+       plus which variable the key came from and what kind of key it is. A 401
+       "Invalid API key" on its own tells you nothing you can act on. */
+    console.error(
+      '[api/state] read failed',
+      JSON.stringify({ ...describeError(err), url: process.env.SUPABASE_URL || null, keyRole: keyRoleHint(secretKey() || '') }),
+    );
     return res.status(500).json({ ok: false, reason: 'Could not read the class board.' });
   }
 }

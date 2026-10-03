@@ -4,23 +4,76 @@ import { createClient } from '@supabase/supabase-js';
  * The one place that talks to Supabase. Only these serverless functions ever hold
  * the service role key, so the browser never ships a database credential.
  *
- * Set on Vercel (Project Settings, Environment Variables):
- *   SUPABASE_URL               https://<project-ref>.supabase.co
- *   SUPABASE_SERVICE_ROLE_KEY  the service_role key from Project Settings, API
- *   SUPABASE_ANON_KEY          the anon key, handed to the browser for the
- *                              realtime doorbell only. It is public by design and
- *                              row level security still refuses it.
+ * Set on Vercel (Project Settings, Environment Variables). Supabase renamed these
+ * keys, so both spellings are read and the new one wins:
+ *
+ *   SUPABASE_URL                 https://<project-ref>.supabase.co
+ *   SUPABASE_SECRET_KEY          sb_secret_...   (new name, what the dashboard
+ *   SUPABASE_SERVICE_ROLE_KEY                   shows today; legacy name still read)
+ *   SUPABASE_PUBLISHABLE_KEY     sb_publishable_...  handed to the browser for the
+ *   SUPABASE_ANON_KEY                            realtime doorbell only. Public by
+ *                                               design, and row level security
+ *                                               still refuses it.
+ *
+ * The values are trimmed and unwrapped before use, because a key pasted as
+ * "SUPABASE_SECRET_KEY=sb_secret_..." or with quotes still around it is refused
+ * by Supabase with "Invalid API key", and that reads like a wrong key when it is
+ * only a messy paste.
  */
 
 const TABLE = 'class_state';
 const ROW_ID = 'section-h';
 
+/** The server key, under either name, cleaned up. */
+export function secretKey() {
+  return readKeyEnv(['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY']);
+}
+
+/** The browser key, under either name, cleaned up. Null when it is not set. */
+export function publishableKey() {
+  return readKeyEnv(['SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_ANON_KEY']);
+}
+
+function readKeyEnv(names) {
+  for (const name of names) {
+    const raw = process.env[name];
+    if (typeof raw !== 'string') continue;
+    const cleaned = cleanKeyValue(raw, name);
+    if (cleaned) return cleaned;
+  }
+  return null;
+}
+
+/**
+ * Turns a pasted value into the key itself. Trims whitespace, drops one layer of
+ * quotes, and removes a leading "NAME=" when a whole env line was pasted instead
+ * of just the value. Returns null when nothing usable is left, and never returns
+ * anything with whitespace inside it, since Supabase rejects those as invalid.
+ */
+export function cleanKeyValue(raw, name) {
+  let value = String(raw == null ? '' : raw).trim();
+  if (!value) return null;
+
+  if (name && value.length > name.length) {
+    const head = value.slice(0, name.length);
+    if (head.toLowerCase() === name.toLowerCase()) {
+      const rest = value.slice(name.length);
+      if (rest.startsWith('=')) value = rest.slice(1).trim();
+    }
+  }
+
+  const quoted = value.match(/^(['"])([\s\S]*)\1$/);
+  if (quoted) value = quoted[2].trim();
+
+  return value || null;
+}
+
 export function isConfigured() {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  return Boolean(String(process.env.SUPABASE_URL || '').trim() && secretKey());
 }
 
 function client() {
-  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  return createClient(String(process.env.SUPABASE_URL || '').trim(), secretKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
@@ -39,30 +92,75 @@ const EMPTY = {
  */
 export function describeError(err) {
   if (!err) return { message: 'Unknown error.' };
+  /* An empty message is common: a HEAD request that fails hands back
+     { message: '' }, and falling through to String(err) would print
+     "[object Object]" and hide the only detail that existed. Fall back to the
+     object's own keys so the shape at least survives. */
+  const message = String(err.message || '').trim();
+  const fallback = (() => {
+    try {
+      const keys = Object.keys(err).filter((k) => k !== 'message');
+      return keys.length ? `{ ${keys.join(', ')} }` : 'no details were returned';
+    } catch (e) {
+      return 'no details were returned';
+    }
+  })();
   return {
     name: err.name || null,
     code: err.code || null,
     status: err.status || null,
-    message: err.message || String(err),
+    message: message || fallback,
     details: err.details || null,
     hint: err.hint || null,
   };
 }
 
 /**
- * Reads the role out of a legacy Supabase key so a pasted anon key is obvious.
- * The payload is only decoded, never verified, and the key itself is never
- * printed or returned.
+ * Names the kind of key without revealing it, so "Invalid API key" turns into
+ * something actionable. New keys are not JWTs, so their prefix is the whole
+ * story; a legacy key has its role claim decoded, never verified. The key itself
+ * is never printed, and at most four characters of the random part are shown,
+ * which is what makes a single mistyped character visible next to the dashboard.
  */
 export function keyRoleHint(key) {
   if (!key) return null;
-  if (!key.startsWith('eyJ')) return 'new style key, sb_secret_...';
-  try {
-    const payload = JSON.parse(Buffer.from(key.split('.')[1], 'base64').toString('utf8'));
-    return payload.role || 'legacy key, role not stated';
-  } catch (err) {
-    return 'legacy key, role could not be read';
+  const value = String(key).trim();
+
+  if (value.startsWith('sb_secret_')) return 'secret key (sb_secret_), this is the right one for the server';
+  if (value.startsWith('sb_publishable_')) return 'publishable key (sb_publishable_), browser only, cannot write';
+  if (value.startsWith('sb_')) return 'sb_ key of an unknown subtype, Supabase may not recognise it';
+  if (!value.startsWith('eyJ')) {
+    return 'not a Supabase key at all: no sb_ prefix and not a JWT, so something else was pasted here';
   }
+  try {
+    const payload = JSON.parse(Buffer.from(value.split('.')[1], 'base64').toString('utf8'));
+    return payload.role === 'service_role'
+      ? 'legacy service_role key, correct for the server'
+      : `legacy key with role "${payload.role || 'unstated'}", service_role is the one that can write`;
+  } catch (err) {
+    return 'legacy key that could not be decoded, treat it as suspect';
+  }
+}
+
+/**
+ * A short, non-reversible fingerprint: the key prefix plus length plus the first
+ * four characters of the random part. Enough to tell "this is the same key the
+ * dashboard shows" from "one character differs", useless to anyone who does not
+ * already have the key. Never returns the key.
+ */
+export function keyFingerprint(key) {
+  if (!key) return null;
+  const value = String(key).trim();
+  /* New keys have two underscores, sb_secret_ or sb_publishable_, and the type is
+     only meaningful up to the second one. A legacy JWT has none. */
+  const parts = value.split('_');
+  const prefix = parts.length >= 3 ? parts.slice(0, 2).join('_') + '_' : '';
+  return {
+    prefix: prefix || '(legacy JWT)',
+    length: value.length,
+    head: value.slice(prefix.length, prefix.length + 4),
+    hasWhitespaceInside: /\s/.test(value),
+  };
 }
 
 /**
@@ -70,12 +168,21 @@ export function keyRoleHint(key) {
  * is a missing variable, the wrong key, the wrong URL, or the table itself.
  */
 export async function diagnose() {
-  const url = process.env.SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const url = String(process.env.SUPABASE_URL || '').trim();
+  const key = secretKey() || '';
   const report = {
-    configured: { url: Boolean(url), serviceKey: Boolean(key), anonKey: Boolean(process.env.SUPABASE_ANON_KEY) },
-    urlLooksLikeProjectUrl: /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(url.trim()),
-    keyRole: keyRoleHint(key.trim()),
+    configured: { url: Boolean(url), serviceKey: Boolean(key), publishableKey: Boolean(publishableKey()) },
+    /* Which variable each value came from, so a rename cannot hide a setting. */
+    readFrom: {
+      url: 'SUPABASE_URL',
+      secretKey: key ? (process.env.SUPABASE_SECRET_KEY ? 'SUPABASE_SECRET_KEY' : 'SUPABASE_SERVICE_ROLE_KEY') : null,
+      publishableKey: publishableKey()
+        ? (process.env.SUPABASE_PUBLISHABLE_KEY ? 'SUPABASE_PUBLISHABLE_KEY' : 'SUPABASE_ANON_KEY')
+        : null,
+    },
+    urlLooksLikeProjectUrl: /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(url),
+    keyRole: keyRoleHint(key),
+    keyFingerprint: keyFingerprint(key),
     table: TABLE,
     rowId: ROW_ID,
     reachable: false,
@@ -84,22 +191,38 @@ export async function diagnose() {
   };
 
   if (!report.configured.url || !report.configured.serviceKey) {
-    report.error = { message: 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing in this deployment.' };
+    report.error = {
+      message: 'SUPABASE_URL or the secret key (SUPABASE_SECRET_KEY) is missing in this deployment.',
+    };
     return report;
   }
 
   try {
-    /* count: 'exact' with head: true asks for the row count without fetching rows,
-       so this stays cheap and proves the service role can reach the table. */
+    /* Deliberately not head: true. A failed HEAD hands back an error whose message
+       is an empty string, so an unreachable project reported only
+       "[object Object]". One row of one column costs nothing and keeps the real
+       message. */
     const { count, error } = await client()
       .from(TABLE)
-      .select('id', { count: 'exact', head: true })
+      .select('id', { count: 'exact' })
       .eq('id', ROW_ID);
     report.reachable = !error;
     report.rows = count;
     report.error = error ? describeError(error) : null;
   } catch (err) {
     report.error = describeError(err);
+  }
+
+  /* "Invalid API key" names neither the variable nor the kind of key, and it is
+     the single most common failure here, so it gets an explanation attached. The
+     other two causes are separated because they need different fixes. */
+  if (/invalid api key|no api key found/i.test(String(report.error?.message || ''))) {
+    const where = report.readFrom.secretKey;
+    report.remedy = report.configured.url
+      ? `Supabase refused the key read from ${where}. Copy the sb_secret_... value again in Project Settings > Environment Variables, as the value only, with no name and no quotes, then redeploy.`
+      : 'Set SUPABASE_URL to your Project URL and the sb_secret_... key to SUPABASE_SECRET_KEY, then redeploy.';
+  } else if (report.error && !report.urlLooksLikeProjectUrl) {
+    report.remedy = 'SUPABASE_URL does not look like a Project URL. Use https://<project-ref>.supabase.co, not the JWKS url or a connection string.';
   }
 
   return report;
@@ -113,7 +236,7 @@ export async function diagnose() {
 export function realtimeConfig() {
   if (!isConfigured()) return null;
   const url = String(process.env.SUPABASE_URL || '').trim();
-  const anonKey = String(process.env.SUPABASE_ANON_KEY || '').trim();
+  const anonKey = publishableKey();
   if (!url || !anonKey) return null;
   return { url, anonKey };
 }

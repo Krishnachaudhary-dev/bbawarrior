@@ -38,16 +38,30 @@ The quiz needs the organizer served on the same origin for the shared sign-on to
 
 ## Shared board
 
-`api/state.js` and `api/action.js` read and write one Supabase table. Without `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set in the Vercel project the API reports offline and both apps fall back to browser storage.
+`api/state.js` and `api/action.js` read and write one Supabase table. Without `SUPABASE_URL` and a secret key set in the Vercel project the API reports offline and both apps fall back to browser storage.
 
 ```
 1. create a Supabase project
 2. run supabase/schema.sql in its SQL editor
-3. set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_ANON_KEY in Vercel
+3. set these three in Vercel (Project Settings, Environment Variables)
 4. redeploy
 ```
 
-The anon key is only there so the browser can open the realtime doorbell. It is public by design and row level security still refuses it, so nothing about the board is readable with it.
+| Variable | Value | Needed for |
+| --- | --- | --- |
+| `SUPABASE_URL` | `https://<project-ref>.supabase.co` | everything |
+| `SUPABASE_SECRET_KEY` | the `sb_secret_...` key | reading and writing the board |
+| `SUPABASE_PUBLISHABLE_KEY` | the `sb_publishable_...` key | the realtime doorbell only |
+
+Supabase renamed these keys. The older names `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_ANON_KEY` are still read, and the new names win when both are set, so an existing deployment keeps working. The values are trimmed and unwrapped before use: a key pasted as `SUPABASE_SECRET_KEY=sb_secret_...`, or with quotes left around it, is refused by Supabase with `Invalid API key` and that reads like a wrong key when it is only a messy paste.
+
+Paste the value on its own. Do not paste the `NAME=value` line, and never commit either key.
+
+The publishable key is public by design and row level security still refuses it, so nothing about the board is readable with it. The secret key bypasses row level security and must stay in Vercel's environment variables, out of the repo and out of chat.
+
+### When sync does not work
+
+Open `https://<your-app>.vercel.app/api/health`. It reports which variable each value came from, what kind of key it is (`secret`, `publishable` or a legacy JWT), a four character fingerprint for spotting a typo, whether the URL looks like a Project URL, whether the table is reachable, and a `remedy` line when it is not. It never prints the key.
 
 ## Roles and real time
 
