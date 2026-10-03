@@ -258,7 +258,7 @@ To switch it on: create a free Supabase project, run `supabase/schema.sql` in it
 
 ## 11. The college quiz site
 
-`C:\Users\Krishna\Downloads\Compressed\college-quiz-app\college-quiz`
+Its sources now live in this repository at the paths below, mirrored from the standalone project folder `C:\Users\Krishna\Downloads\Compressed\college-quiz-app\college-quiz`. This repository is the copy that gets pushed, so edit here and copy across if you still work in that folder.
 
 | File | What it does |
 |---|---|

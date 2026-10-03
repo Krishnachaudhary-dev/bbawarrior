@@ -1,0 +1,3948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BBA Section H Organizer</title>
+  <meta name="description" content="Password-protected assignment organizer for BBA Section H. Track subjects, due dates, status, pictures and solutions." />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2310b981'/%3E%3Cstop offset='1' stop-color='%230d9488'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Cpath d='M32 16 10 26l22 10 22-10z' fill='%23fff'/%3E%3Cpath d='M21 33v9c0 3.6 4.9 6.5 11 6.5s11-2.9 11-6.5v-9l-11 5z' fill='%23fff' opacity='.85'/%3E%3C/svg%3E" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+            display: ["Outfit", "Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+          },
+          boxShadow: {
+            card: "0 1px 2px rgba(15,23,42,.04), 0 14px 34px -18px rgba(15,23,42,.25)",
+            lift: "0 2px 6px rgba(15,23,42,.06), 0 28px 56px -24px rgba(15,23,42,.35)",
+            glow: "0 10px 30px -12px rgba(16,185,129,.65)",
+            "card-dark": "0 1px 2px rgba(2,6,23,.5), 0 18px 40px -22px rgba(2,6,23,.8)",
+          },
+          keyframes: {
+            fadeIn: { from: { opacity: "0" }, to: { opacity: "1" } },
+            rise: {
+              from: { opacity: "0", transform: "translateY(14px) scale(.97)" },
+              to: { opacity: "1", transform: "translateY(0) scale(1)" },
+            },
+            toastIn: {
+              from: { opacity: "0", transform: "translateY(14px)" },
+              to: { opacity: "1", transform: "translateY(0)" },
+            },
+          },
+          animation: {
+            "fade-in": "fadeIn .2s ease-out both",
+            rise: "rise .32s cubic-bezier(.16,1,.3,1) both",
+            "toast-in": "toastIn .3s cubic-bezier(.16,1,.3,1) both",
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background-color: #f1f5f9;
+    }
+    html.dark body { background-color: #020617; }
+
+    /* Every interactive element advertises itself and shows a visible focus ring. */
+    button:not(:disabled), [role="button"], select, summary, input[type="date"], input[type="file"] { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+    :where(a, button, input, select, textarea, summary, [role="button"]):focus-visible {
+      outline: 2px solid #10b981;
+      outline-offset: 2px;
+      border-radius: 10px;
+    }
+    ::selection { background: rgba(16, 185, 129, .22); }
+    input[type="date"]::-webkit-calendar-picker-indicator { opacity: .55; cursor: pointer; }
+    html.dark input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: .6; }
+    input:-webkit-autofill,
+    input:-webkit-autofill:focus {
+      -webkit-text-fill-color: #0f172a;
+      -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+      transition: background-color 9999s ease-in-out 0s;
+    }
+    html.dark input:-webkit-autofill,
+    html.dark input:-webkit-autofill:focus {
+      -webkit-text-fill-color: #e2e8f0;
+      -webkit-box-shadow: 0 0 0 1000px #0f172a inset;
+    }
+    textarea { resize: vertical; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; }
+    html.dark ::-webkit-scrollbar-thumb { background: #334155; background-clip: content-box; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+
+  <!-- One React instance shared by the app and lucide-react -->
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.3.1",
+        "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+        "react/jsx-dev-runtime": "https://esm.sh/react@18.3.1/jsx-dev-runtime",
+        "react-dom": "https://esm.sh/react-dom@18.3.1?external=react",
+        "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?external=react",
+        "lucide-react": "https://esm.sh/lucide-react@0.469.0?external=react"
+      }
+    }
+  </script>
+
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module" data-presets="react">
+    import React, { useEffect, useMemo, useRef, useState } from "react";
+    import { createRoot } from "react-dom/client";
+    import {
+      ArrowRight, BookOpen, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert,
+      CircleCheckBig, Clock, Copy, Download, Eye, EyeOff, Filter, GraduationCap,
+      HardDrive, ImagePlus, Inbox, KeyRound, Layers, Lightbulb, LoaderCircle,
+      Lock, LogIn, LogOut, Maximize2, Monitor, Moon, Pencil, PenLine, Plus,
+      RefreshCw, Search, Settings, ShieldCheck, Sparkles, Sun, Tag, Trash2,
+      Upload, User, UserPlus, Users, X, ZoomIn, ZoomOut,
+    } from "lucide-react";
+
+    /* ============================================================
+       Domain constants
+       ============================================================ */
+
+    const DEFAULT_PASSWORD = "admin";
+    const DEFAULT_CLASS_CODE = "SECTION-H";
+    const STORAGE_KEY = "bba-section-h-organizer.v1";
+    const CONFIG_KEY = "bba-section-h-organizer.config.v1";
+    const SESSION_KEY = "bba-section-h-organizer.session.v1";
+    const ADMIN_HASH = "#admin";
+
+    /* Everyone signs in with their own login. An admin can manage the class,
+       a student can submit work to the shared board. */
+    const ROLE_META = {
+      admin: {
+        label: "Admin",
+        chip: "bg-amber-50 text-amber-700 ring-amber-200/80 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/25",
+      },
+      student: {
+        label: "Student",
+        chip: "bg-slate-100 text-slate-600 ring-slate-200/80 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700",
+      },
+    };
+
+    const DEFAULT_SUBJECTS = [
+      "Financial Management",
+      "Marketing Management",
+      "Organizational Behavior",
+      "Business Communication",
+      "Management Information Systems",
+      "Business Law",
+      "Quantitative Methods",
+      "Strategic Management",
+    ];
+
+    /* Subjects carry a single dot colour. The chip itself stays neutral so the
+       page keeps one accent language instead of a rainbow of pastel badges. */
+    const SUBJECT_DOTS = {
+      "Financial Management": "bg-indigo-500",
+      "Marketing Management": "bg-rose-500",
+      "Organizational Behavior": "bg-violet-500",
+      "Business Communication": "bg-sky-500",
+      "Management Information Systems": "bg-cyan-500",
+      "Business Law": "bg-amber-500",
+      "Quantitative Methods": "bg-teal-500",
+      "Strategic Management": "bg-orange-500",
+    };
+    const subjectDot = (subject) => SUBJECT_DOTS[subject] || "bg-slate-400 dark:bg-slate-500";
+
+    const STATUS_META = {
+      pending: {
+        label: "Pending",
+        icon: Clock,
+        chip: "bg-amber-50 text-amber-700 ring-amber-200/80 hover:bg-amber-100 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/25 dark:hover:bg-amber-400/20",
+        active: "bg-amber-50 text-amber-700 ring-amber-300 dark:bg-amber-400/15 dark:text-amber-200 dark:ring-amber-400/40",
+        bar: "bg-amber-500",
+        tile: "bg-amber-50 text-amber-600 ring-amber-100 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20",
+      },
+      "in-progress": {
+        label: "In Progress",
+        icon: LoaderCircle,
+        chip: "bg-sky-50 text-sky-700 ring-sky-200/80 hover:bg-sky-100 dark:bg-sky-400/10 dark:text-sky-300 dark:ring-sky-400/25 dark:hover:bg-sky-400/20",
+        active: "bg-sky-50 text-sky-700 ring-sky-300 dark:bg-sky-400/15 dark:text-sky-200 dark:ring-sky-400/40",
+        bar: "bg-sky-500",
+        tile: "bg-sky-50 text-sky-600 ring-sky-100 dark:bg-sky-400/10 dark:text-sky-300 dark:ring-sky-400/20",
+      },
+      completed: {
+        label: "Completed",
+        icon: CircleCheckBig,
+        chip: "bg-emerald-50 text-emerald-700 ring-emerald-200/80 hover:bg-emerald-100 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/25 dark:hover:bg-emerald-400/20",
+        active: "bg-emerald-50 text-emerald-700 ring-emerald-300 dark:bg-emerald-400/15 dark:text-emerald-200 dark:ring-emerald-400/40",
+        bar: "bg-emerald-500",
+        tile: "bg-emerald-50 text-emerald-600 ring-emerald-100 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20",
+      },
+    };
+    const STATUS_ORDER = ["pending", "in-progress", "completed"];
+    const NEXT_STATUS = { pending: "in-progress", "in-progress": "completed", completed: "pending" };
+
+    const THEME_ORDER = ["light", "dark", "system"];
+    const THEME_META = {
+      light: { label: "Light", icon: Sun },
+      dark: { label: "Dark", icon: Moon },
+      system: { label: "System", icon: Monitor },
+    };
+
+    const DUE_FILTERS = [
+      { key: "all", label: "All" },
+      { key: "overdue", label: "Overdue" },
+      { key: "today", label: "Due today" },
+      { key: "week", label: "Next 7 days" },
+    ];
+
+    /* Required fields, in the order they should be chased when a submit fails.
+       The modal scrolls as one long column, so this order doubles as the
+       order the eye is walked down the form. */
+    const REQUIRED_FIELDS = [
+      { key: "title", label: "Title" },
+      { key: "subject", label: "Subject" },
+      { key: "dueDate", label: "Due date" },
+      { key: "description", label: "Description" },
+    ];
+
+    /* Pictures per assignment, per part. Six at the reduced fill budget stays
+       inside the 5 MB browser store even on a photo heavy board. */
+    const MAX_PICTURES = 6;
+
+    const SEED = [
+      {
+        id: "seed-1",
+        subject: "Financial Management",
+        title: "Ratio Analysis: Walmart vs. Target",
+        description:
+          "Compute liquidity, leverage and profitability ratios for both retailers from their latest filings, then write a 400-word comparison of how efficiently each firm manages working capital.",
+        solution:
+          "1) Current ratio = Current Assets / Current Liabilities\n   Walmart about 0.81, Target about 1.18\n\n2) Debt to Equity = Total Debt / Shareholders' Equity\n   Walmart about 0.66, Target about 1.29\n\n3) DuPont ROE = Net Margin x Asset Turnover x Equity Multiplier\n   Walmart about 22.1%, Target about 29.4%\n\nConclusion: Target is more liquid but materially more leveraged. Walmart's thinner liquidity is cushioned by fast cash conversion. Retail runs on negative working capital, so payables turnover matters more than the current ratio. Say that explicitly for full marks.",
+        dueDate: "2026-10-06",
+        status: "in-progress",
+        createdAt: 1,
+      },
+      {
+        id: "seed-2",
+        subject: "Organizational Behavior",
+        title: "Case Study: Communication Breakdown on the Assembly Line",
+        description:
+          "Identify the structural and behavioural causes of the production delay, map each cause to a communication model from class, and recommend two corrective actions.",
+        solution:
+          "Framework: Ladder of Inference plus Johari Window for the floor supervisor conflict.\n\n1) Cause, filtering: shift reports summarised away the defect rate.\n   Model: Shannon and Weaver noise in the encoding step.\n\n2) Cause, status distance: operators did not challenge the supervisor.\n   Model: Hofstede power distance, score about 40 in the case.\n\nRecommendations:\n1. Ten minute tiered huddle at every shift handover with a fixed defect template.\n2. Anonymous issue channel reviewed by the team lead within 24 hours.\n\nFinish with one paragraph on how each fix shortens the feedback loop.",
+        dueDate: "2026-10-03",
+        status: "pending",
+        createdAt: 2,
+      },
+      {
+        id: "seed-3",
+        subject: "Business Law",
+        title: "Contract Validity Problem Set (Offer, Acceptance, Consideration)",
+        description:
+          "Answer the six hypotheticals on offer, acceptance and consideration, citing the governing principle for every conclusion in IRAC form.",
+        solution:
+          "Q1: An advertisement is an invitation to treat (Partridge v Crittenden). The shop display accepted the customer's offer, not the other way round.\n\nQ2: A counter offer kills the original offer (Hyde v Wrench).\n\nQ3: Late acceptance only counts if the offeror is notified promptly (Adams v Lindsell). Silence is never acceptance (Felthouse v Bindley).\n\nQ4: Consideration must move from the promisee, and past consideration is no consideration (Roscorla v Thomas).\n\nQ5: A certified cheque is valid consideration even for a moral duty (Hamer v Sidway).\n\nQ6: Intention to create legal relations: a social agreement carries a rebuttable presumption against (Balfour v Balfour).",
+        dueDate: "2026-10-12",
+        status: "in-progress",
+        createdAt: 3,
+      },
+      {
+        id: "seed-4",
+        subject: "Business Communication",
+        title: "Formal Memo: Remote Work Policy Change",
+        description:
+          "Draft a one-page block memo from the HR Director to all staff announcing the hybrid policy effective 1 November, including rationale, expectations and next steps.",
+        solution:
+          "MEMORANDUM\nTo: All Employees\nFrom: Director of Human Resources\nDate: 12 October 2026\nSubject: Transition to a Hybrid Work Schedule\n\nOpening, direct: from 1 November all professional roles move to a three day in office schedule, Tuesday to Thursday.\n\nRationale, reader benefit first:\n1. Faster cross team decisions\n2. Mentoring for junior staff\n3. Client visits handled without rescheduling\n\nExpectations: core hours 9:30 to 16:00, calendar blocks for focus work, manager approval for exceptions.\n\nClose: FAQ session on 20 October, questions to people@company.com.\n\nTone check: second person, active voice, no hedging.",
+        dueDate: "2026-09-28",
+        status: "pending",
+        createdAt: 4,
+      },
+      {
+        id: "seed-5",
+        subject: "Management Information Systems",
+        title: "ERP Selection Report: SAP vs. Oracle vs. Dynamics",
+        description:
+          "Score three ERP vendors on a weighted decision matrix for a mid-sized manufacturer and justify the recommendation in a two page report.",
+        solution:
+          "Weights: Functionality .30, Total cost of ownership .25, Implementation risk .20, Scalability .15, Vendor support .10\n\nScores out of 10:\nSAP S/4HANA: 8, 5, 6, 9, 8 gives 7.15\nOracle Fusion: 7, 6, 6, 9, 7 gives 6.95\nMicrosoft Dynamics 365: 7, 9, 8, 7, 7 gives 7.60\n\nRecommendation: Dynamics 365, the best balance of cost and risk for a 400 seat manufacturer already on Microsoft 365. Revisit SAP if the group acquires an SAP shop.\n\nAdd a sensitivity note: if the cost weight drops to .15, SAP moves to first place.",
+        dueDate: "2026-09-26",
+        status: "completed",
+        createdAt: 5,
+      },
+      {
+        id: "seed-6",
+        subject: "Quantitative Methods",
+        title: "Linear Programming: Production Mix (Exercise Set 4)",
+        description:
+          "Formulate the production mix LP, solve it with the simplex method, and interpret the shadow prices for both constraints.",
+        solution:
+          "Maximise Z = 40x1 + 30x2\nSubject to:\n  2x1 + 1x2 <= 40 (assembly hours)\n  1x1 + 2x2 <= 50 (finishing hours)\n  x1, x2 >= 0\n\nOptimal tableau: x1 = 10, x2 = 20, Z = 1000.\n\nShadow prices: assembly 10 per hour, finishing 10 per hour. Buy assembly hours first, up to the feasibility range of 33.3 to 55 hours.\n\nA reduced cost of minus 5 on a third product means it must earn 5 more per unit before it enters the basis.",
+        dueDate: "2026-10-15",
+        status: "completed",
+        createdAt: 6,
+      },
+      {
+        id: "seed-7",
+        subject: "Marketing Management",
+        title: "STP Analysis of Nespresso",
+        description:
+          "Segment the at-home coffee market, define the target segment Nespresso serves, and write a positioning statement supported by evidence from the case.",
+        solution: "",
+        dueDate: "2026-10-09",
+        status: "pending",
+        createdAt: 7,
+      },
+      {
+        id: "seed-8",
+        subject: "Strategic Management",
+        title: "Persuasive Pitch: Campus Sustainability Fee",
+        description:
+          "Build a five slide persuasive argument for or against a $50 per semester sustainability fee, using one concession and refute move.",
+        solution: "",
+        dueDate: "2026-10-18",
+        status: "pending",
+        createdAt: 8,
+      },
+    ];
+
+    /* ============================================================
+       Storage
+       ============================================================ */
+
+    const uid = () => "a-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+
+    function loadItems() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.items)) return parsed.items.map(normaliseItem);
+        }
+      } catch (err) {
+        /* corrupted storage, fall back to the sample set */
+      }
+      return SEED.map(normaliseItem);
+    }
+
+    function saveItems(items) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, items }));
+        return true;
+      } catch (err) {
+        return false; /* quota exceeded or storage blocked */
+      }
+    }
+
+    function normaliseAccount(raw) {
+      if (!raw || !raw.username) return null;
+      const username = String(raw.username).replace(/\s+/g, " ").trim();
+      if (!username) return null;
+      return {
+        id: raw.id ? String(raw.id) : uid(),
+        username,
+        password: typeof raw.password === "string" && raw.password ? raw.password : DEFAULT_PASSWORD,
+        role: raw.role === "admin" ? "admin" : "student",
+        createdAt: raw.createdAt ? Number(raw.createdAt) : Date.now(),
+        lastSeen: raw.lastSeen ? Number(raw.lastSeen) : 0,
+      };
+    }
+
+    /* One code, many logins. The first ever config grows a single admin account
+       so an older save keeps working with the same password it always had. */
+    function normaliseConfig(parsed) {
+      const source = parsed && typeof parsed === "object" ? parsed : {};
+      const stored = Array.isArray(source.accounts) ? source.accounts.map(normaliseAccount).filter(Boolean) : [];
+      const accounts = stored.length
+        ? stored
+        : [{
+            id: uid(),
+            username: "admin",
+            password: typeof source.password === "string" && source.password ? source.password : DEFAULT_PASSWORD,
+            role: "admin",
+            createdAt: Date.now(),
+            lastSeen: 0,
+          }];
+
+      /* Never let a broken file lock everyone out. */
+      if (!accounts.some((a) => a.role === "admin")) accounts[0] = { ...accounts[0], role: "admin" };
+
+      return {
+        subjects: Array.isArray(source.subjects) && source.subjects.length ? source.subjects : [...DEFAULT_SUBJECTS],
+        theme: source.theme || "system",
+        classCode: typeof source.classCode === "string" && source.classCode.trim() ? source.classCode.trim() : DEFAULT_CLASS_CODE,
+        accounts,
+      };
+    }
+
+    function loadConfig() {
+      try {
+        const raw = localStorage.getItem(CONFIG_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && (Array.isArray(parsed.subjects) || typeof parsed.password === "string")) {
+            return normaliseConfig(parsed);
+          }
+        }
+      } catch (err) {
+        /* fall through to defaults */
+      }
+      return normaliseConfig({ password: DEFAULT_PASSWORD, subjects: [...DEFAULT_SUBJECTS], theme: "system" });
+    }
+
+    function saveConfig(config) {
+      try {
+        localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+        return true;
+      } catch (err) {
+        return false;
+      }
+    }
+
+    /* The signed in identity lives under its own key and never stores a password.
+       The college quiz app reads and writes the same key on the same origin, which
+       is what lets one sign in cover both sites. */
+    function loadSession() {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed.id !== "string" || !parsed.id) return null;
+        return { id: parsed.id, at: Number(parsed.at) || 0 };
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function saveSession(account) {
+      try {
+        localStorage.setItem(SESSION_KEY, JSON.stringify({ id: account.id, at: Date.now() }));
+        return true;
+      } catch (err) {
+        return false;
+      }
+    }
+
+    function clearSession() {
+      try {
+        localStorage.removeItem(SESSION_KEY);
+      } catch (err) {
+        /* nothing to do */
+      }
+    }
+
+    /* index.html#admin (or ?gate=admin) opens the admin gate. Students land on the
+       class screen and never see it. */
+    function readGate() {
+      try {
+        const hash = String(window.location.hash || "").replace(/^#/, "").toLowerCase();
+        if (hash === "admin" || hash === "adm") return "admin";
+        if (new URLSearchParams(window.location.search).get("gate") === "admin") return "admin";
+      } catch (err) {
+        /* fall through to the class gate */
+      }
+      return "class";
+    }
+
+    function accountsFingerprint(accounts) {
+      return (accounts || [])
+        .map((a) => [a.id, a.username, a.password, a.role, a.lastSeen || 0].join(":"))
+        .join("|");
+    }
+
+    function itemsFingerprint(items) {
+      return items
+        .map((i) =>
+          [i.id, i.createdAt || 0, i.updatedAt || 0, i.status, i.title, (i.images || []).length, (i.solutionImages || []).length].join(":")
+        )
+        .join("|");
+    }
+
+    function storageOriginLabel() {
+      try {
+        const origin = window.location.origin;
+        if (origin && origin !== "null") return origin;
+      } catch (err) {
+        /* fall through to the file case */
+      }
+      return "this file, opened straight from your computer";
+    }
+
+    /* Shared class board. Served from the college quiz app, /api holds one copy for
+       everyone, so an admin deleting an assignment removes it for every student on
+       their next poll. Opened on its own, or with no network, the API does not
+       answer and this app keeps using its own localStorage copy as before. */
+    function remoteRequest(path, options) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      return fetch("./api" + path, {
+        method: (options && options.method) || "GET",
+        headers: { "Content-Type": "application/json" },
+        body: options ? options.body : undefined,
+        signal: controller.signal,
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null)
+        .finally(() => clearTimeout(timer));
+    }
+
+    async function remotePull() {
+      const data = await remoteRequest("/state");
+      return data && data.ok ? data : null;
+    }
+
+    async function remotePush(type, payload) {
+      const data = await remoteRequest("/action", { method: "POST", body: JSON.stringify({ type, payload }) });
+      return Boolean(data && data.ok);
+    }
+
+    function adminGateUrl() {
+      try {
+        const url = new URL(window.location.href);
+        url.hash = "admin";
+        url.search = "";
+        return url.toString();
+      } catch (err) {
+        return ADMIN_HASH;
+      }
+    }
+
+    function storageUsageText() {
+      try {
+        const bytes =
+          (localStorage.getItem(STORAGE_KEY) || "").length +
+          (localStorage.getItem(CONFIG_KEY) || "").length;
+        const kb = bytes / 1024;
+        return kb > 1024 ? (kb / 1024).toFixed(2) + " MB" : Math.max(1, Math.round(kb)) + " KB";
+      } catch (err) {
+        return "an unknown amount";
+      }
+    }
+
+    /* ============================================================
+       Date, image and file helpers
+       ============================================================ */
+
+    function parseISO(iso) {
+      const [y, m, d] = String(iso).split("-").map(Number);
+      if (!y || !m || !d) return null;
+      return new Date(y, m - 1, d);
+    }
+
+    function formatDate(iso) {
+      const date = parseISO(iso);
+      if (!date) return "No date";
+      return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    }
+
+    function daysUntil(iso) {
+      const date = parseISO(iso);
+      if (!date) return null;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return Math.round((date - today) / 86400000);
+    }
+
+    function dueInfo(iso, status) {
+      const diff = daysUntil(iso);
+      if (diff === null) return { label: "No due date", tone: "text-slate-500 dark:text-slate-400", overdue: false };
+
+      let label, tone, overdue = false;
+      if (diff > 1) { label = "Due in " + diff + " days"; tone = "text-slate-500 dark:text-slate-400"; }
+      else if (diff === 1) { label = "Due tomorrow"; tone = "text-amber-600 dark:text-amber-400"; }
+      else if (diff === 0) { label = "Due today"; tone = "text-amber-600 dark:text-amber-400"; }
+      else if (diff === -1) { label = "1 day overdue"; tone = "text-rose-600 dark:text-rose-400"; overdue = true; }
+      else { label = Math.abs(diff) + " days overdue"; tone = "text-rose-600 dark:text-rose-400"; overdue = true; }
+
+      /* The status chip already says Completed, so the due row stays quiet. */
+      if (status === "completed") return { label: "", tone: "text-slate-500 dark:text-slate-400", overdue: false };
+      return { label, tone, overdue };
+    }
+
+    /* Buckets power the quick filter chips. Finished work is never overdue. */
+    function dueBucket(item) {
+      const diff = daysUntil(item.dueDate);
+      if (diff === null) return "later";
+      if (diff < 0) return item.status === "completed" ? "later" : "overdue";
+      if (diff === 0) return "today";
+      if (diff <= 7) return "week";
+      return "later";
+    }
+
+    /* Resizing is where picture quality is won or lost. The rules:
+       never upscale, keep the long edge inside a budget, shrink in halves instead
+       of one big jump (a single jump softens fine text), and only drop to a
+       smaller encode when the result would eat too much of the 5 MB browser budget. */
+    const IMAGE_STEPS = [
+      { maxEdge: 1800, quality: 0.9 },
+      { maxEdge: 1400, quality: 0.86 },
+      { maxEdge: 1100, quality: 0.82 },
+      { maxEdge: 900, quality: 0.78 },
+    ];
+    const IMAGE_CHAR_BUDGET = 480 * 1024; /* data URL characters, so roughly 360 KB of bytes */
+    const IMAGE_CHAR_BUDGET_FILL = 300 * 1024; /* extra pictures in a set are encoded tighter */
+
+    function drawScaled(source, targetW, targetH) {
+      const canvas = document.createElement("canvas");
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, targetW, targetH);
+
+      let stage = source;
+      let stageW = source.naturalWidth || source.width;
+      let stageH = source.naturalHeight || source.height;
+      while (stageW > targetW * 2 && stageH > targetH * 2) {
+        const halfW = Math.max(targetW, Math.round(stageW / 2));
+        const halfH = Math.max(targetH, Math.round(stageH / 2));
+        const stepCanvas = document.createElement("canvas");
+        stepCanvas.width = halfW;
+        stepCanvas.height = halfH;
+        const stepCtx = stepCanvas.getContext("2d");
+        stepCtx.imageSmoothingEnabled = true;
+        stepCtx.imageSmoothingQuality = "high";
+        stepCtx.drawImage(stage, 0, 0, halfW, halfH);
+        stage = stepCanvas;
+        stageW = halfW;
+        stageH = halfH;
+      }
+
+      ctx.drawImage(stage, 0, 0, targetW, targetH);
+      return canvas;
+    }
+
+    /** Resize and compress a picked image into a data URL small enough to store. */
+    function processImage(file, budget) {
+      return new Promise((resolve, reject) => {
+        if (!file || !file.type || !file.type.startsWith("image/")) {
+          reject(new Error("That file is not an image."));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("That file could not be read."));
+        reader.onload = () => {
+          const img = new Image();
+          img.onerror = () => reject(new Error("That image could not be decoded."));
+          img.onload = () => {
+            const sourceW = img.naturalWidth || img.width;
+            const sourceH = img.naturalHeight || img.height;
+
+            /* Vectors and a few odd formats report no intrinsic size. Keep the
+               original bytes rather than collapsing them to one pixel. */
+            if (!sourceW || !sourceH) {
+              resolve(String(reader.result));
+              return;
+            }
+
+            const longestEdge = Math.max(sourceW, sourceH);
+            const limit = budget || IMAGE_CHAR_BUDGET;
+            let encoded = "";
+            for (const step of IMAGE_STEPS) {
+              const scale = longestEdge > step.maxEdge ? step.maxEdge / longestEdge : 1;
+              const targetW = Math.max(1, Math.round(sourceW * scale));
+              const targetH = Math.max(1, Math.round(sourceH * scale));
+              encoded = drawScaled(img, targetW, targetH).toDataURL("image/jpeg", step.quality);
+              if (encoded.length <= limit) break;
+            }
+            resolve(encoded);
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function downloadBackup(items, config) {
+      const payload = {
+        app: "BBA Section H Organizer",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        items,
+        subjects: config.subjects,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "bba-section-h-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    function readJsonFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("That file could not be read."));
+        reader.onload = () => {
+          try {
+            resolve(JSON.parse(String(reader.result)));
+          } catch (err) {
+            reject(new Error("That file is not valid JSON."));
+          }
+        };
+        reader.readAsText(file);
+      });
+    }
+
+    /* Pictures are stored as arrays. Older saves and backups carry a single
+       string instead, so both shapes are accepted and merged here. */
+    function toImageList(list, legacy) {
+      const out = [];
+      if (Array.isArray(list)) out.push(...list.filter((src) => typeof src === "string" && src));
+      else if (typeof list === "string" && list) out.push(list);
+      if (typeof legacy === "string" && legacy && !out.includes(legacy)) out.push(legacy);
+      return out.slice(0, MAX_PICTURES);
+    }
+
+    function normaliseItem(raw, index) {
+      const status = STATUS_ORDER.includes(raw && raw.status) ? raw.status : "pending";
+      return {
+        id: raw && raw.id ? String(raw.id) : uid() + "-" + index,
+        subject: raw && raw.subject ? String(raw.subject) : "Unfiled",
+        title: raw && raw.title ? String(raw.title) : "Untitled assignment",
+        description: raw && raw.description ? String(raw.description) : "",
+        solution: raw && raw.solution ? String(raw.solution) : "",
+        dueDate: raw && typeof raw.dueDate === "string" ? raw.dueDate : "",
+        status,
+        ownerId: raw && raw.ownerId ? String(raw.ownerId) : "",
+        ownerName: raw && raw.ownerName ? String(raw.ownerName) : "",
+        images: toImageList(raw && raw.images, raw && raw.image),
+        solutionImages: toImageList(raw && raw.solutionImages, raw && raw.solutionImage),
+        createdAt: raw && raw.createdAt ? Number(raw.createdAt) : Date.now() + index,
+      };
+    }
+
+    /* ============================================================
+       Shared class strings
+       ============================================================ */
+
+    const INPUT =
+      "w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-500 dark:focus:bg-slate-900 dark:focus:ring-emerald-500/20";
+    const INPUT_ERR =
+      "w-full rounded-xl border border-rose-300 bg-rose-50/40 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 outline-none transition focus:border-rose-400 focus:bg-white focus:ring-4 focus:ring-rose-100 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-slate-100 dark:focus:border-rose-400 dark:focus:ring-rose-500/20";
+    const CARD =
+      "rounded-2xl border border-slate-200/70 bg-white/85 shadow-card backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/60 dark:shadow-card-dark";
+    const BTN_PRIMARY =
+      "inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:to-emerald-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-emerald-300 active:scale-[0.98]";
+    const BTN_GHOST =
+      "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800";
+    const BTN_ICON =
+      "inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100";
+
+    /* ============================================================
+       Shared chrome
+       ============================================================ */
+
+    function AmbientBackdrop() {
+      return (
+        <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.07)_1px,transparent_0)] [background-size:24px_24px] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(148,163,184,0.10)_1px,transparent_0)]" />
+          <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-emerald-400/25 blur-3xl dark:bg-emerald-500/10" />
+          <div className="absolute -right-48 top-32 h-[30rem] w-[30rem] rounded-full bg-sky-400/20 blur-3xl dark:bg-sky-500/10" />
+          <div className="absolute bottom-[-9rem] left-1/4 h-80 w-80 rounded-full bg-indigo-400/15 blur-3xl dark:bg-indigo-500/10" />
+          <div className="absolute inset-0 bg-gradient-to-b from-white/50 via-transparent to-slate-100/70 dark:from-slate-950/60 dark:via-transparent dark:to-slate-950/80" />
+        </div>
+      );
+    }
+
+    function Field({ id, label, optional, required, error, hint, className = "", children }) {
+      const messageId = id ? id + "-message" : undefined;
+      return (
+        <div className={className}>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            {id ? (
+              <label htmlFor={id} className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                {label}
+              </label>
+            ) : (
+              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{label}</span>
+            )}
+            {optional ? (
+              <span className="rounded-lg bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                Optional
+              </span>
+            ) : required ? (
+              <span className="rounded-lg bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                Required
+              </span>
+            ) : null}
+          </div>
+          {children}
+          {error ? (
+            <p id={messageId} className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-rose-600 dark:text-rose-400">
+              <CircleAlert size={12} className="shrink-0" />
+              {error}
+            </p>
+          ) : hint ? (
+            <p id={messageId} className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">{hint}</p>
+          ) : null}
+        </div>
+      );
+    }
+
+    const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])';
+
+    function Modal({ open, onClose, icon: Icon, iconClass, title, subtitle, maxWidth = "max-w-2xl", focusRef, children }) {
+      const dialogRef = useRef(null);
+
+      useEffect(() => {
+        if (!open) return;
+        const previous = document.activeElement;
+        const dialog = dialogRef.current;
+
+        const first = focusRef && focusRef.current ? focusRef.current : dialog && dialog.querySelector(FOCUSABLE);
+        if (first && first.focus) first.focus();
+
+        function onKeyDown(event) {
+          if (event.key === "Escape") { onClose(); return; }
+          if (event.key !== "Tab" || !dialog) return;
+          const nodes = Array.from(dialog.querySelectorAll(FOCUSABLE)).filter((node) => node.offsetParent !== null);
+          if (!nodes.length) return;
+          const firstNode = nodes[0];
+          const lastNode = nodes[nodes.length - 1];
+          if (event.shiftKey && document.activeElement === firstNode) {
+            event.preventDefault();
+            lastNode.focus();
+          } else if (!event.shiftKey && document.activeElement === lastNode) {
+            event.preventDefault();
+            firstNode.focus();
+          }
+        }
+
+        document.addEventListener("keydown", onKeyDown);
+        document.body.style.overflow = "hidden";
+        return () => {
+          document.removeEventListener("keydown", onKeyDown);
+          document.body.style.overflow = "";
+          if (previous && previous.focus) previous.focus();
+        };
+      }, [open, onClose, focusRef]);
+
+      if (!open) return null;
+
+      return (
+        /* Safe centring matters here: a long form is taller than a short window, and
+           plain items-center clips the top of the dialog out of reach. Safe
+           alignment centres short dialogs and falls back to the top for tall ones. */
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:items-center-safe">
+          <div className="fixed inset-0 animate-fade-in bg-slate-900/40 backdrop-blur-sm dark:bg-slate-950/70" onClick={onClose} />
+
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
+            className={`relative z-10 my-6 w-full ${maxWidth} animate-rise rounded-2xl border border-white/70 bg-white p-5 shadow-lift sm:p-7 dark:border-slate-800 dark:bg-slate-900`}
+          >
+            <div className="flex items-start gap-4">
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white shadow-glow ${iconClass}`}>
+                <Icon size={19} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="font-display text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">{title}</h2>
+                <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close dialog"
+                className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {children}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       Lock screen
+       ============================================================ */
+
+    /* ============================================================
+       Admin gate, opened with index.html#admin
+       ============================================================ */
+
+    function AdminSignIn({ onSignIn, onLeave }) {
+      const [form, setForm] = useState({ username: "", password: "" });
+      const [show, setShow] = useState(false);
+      const [error, setError] = useState("");
+      const firstRef = useRef(null);
+      const cardRef = useRef(null);
+
+      useEffect(() => {
+        const t = setTimeout(() => firstRef.current && firstRef.current.focus(), 120);
+        return () => clearTimeout(t);
+      }, []);
+
+      const field =
+        "w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-3 text-sm text-slate-100 placeholder:text-slate-500 transition focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/30";
+      const fieldErr =
+        "w-full rounded-xl border border-rose-400/60 bg-white/5 px-3.5 py-3 text-sm text-slate-100 placeholder:text-slate-500 transition focus:border-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-400/30";
+      const label = "block text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400";
+
+      function fail(message) {
+        setError(message);
+        const el = cardRef.current;
+        if (!el || !el.animate) return;
+        el.animate(
+          [
+            { transform: "translateX(0px)" },
+            { transform: "translateX(-9px)" },
+            { transform: "translateX(9px)" },
+            { transform: "translateX(-5px)" },
+            { transform: "translateX(5px)" },
+            { transform: "translateX(0px)" },
+          ],
+          { duration: 420, easing: "ease-in-out" }
+        );
+      }
+
+      function set(key) {
+        return (value) => {
+          setForm((f) => ({ ...f, [key]: value }));
+          if (error) setError("");
+        };
+      }
+
+      function submit(event) {
+        event.preventDefault();
+        const username = form.username.trim();
+        if (!username) return fail("Enter your admin username.");
+        if (!form.password) return fail("Enter your admin password.");
+        const result = onSignIn(username, form.password, { adminOnly: true });
+        if (!result.ok) return fail(result.reason);
+      }
+
+      return (
+        <div className="relative flex min-h-screen items-center justify-center px-4 py-10">
+          <AmbientBackdrop />
+
+          <div ref={cardRef} className="relative z-10 w-full max-w-md animate-rise">
+            <div className="overflow-hidden rounded-2xl bg-slate-900 shadow-lift ring-1 ring-white/10">
+              <div className="flex items-center gap-2 border-b border-white/10 px-6 py-3">
+                <ShieldCheck size={14} className="text-emerald-400" />
+                <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-300">
+                  Admin gate
+                </span>
+                <span className="ml-auto text-[11px] text-slate-500">Section H</span>
+              </div>
+
+              <div className="p-8 sm:p-9">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-glow">
+                  <ShieldCheck size={24} />
+                </div>
+
+                <h1 className="mt-6 text-center font-display text-2xl font-semibold tracking-tight text-white">
+                  Organizer admin
+                </h1>
+                <p className="mx-auto mt-2 max-w-xs text-center text-sm leading-relaxed text-slate-400">
+                  Restricted to class admins. Students sign in on the class screen with their own login.
+                </p>
+
+                <form onSubmit={submit} className="mt-7 space-y-4" noValidate>
+                  <div>
+                    <label htmlFor="admin-username" className={label}>Username</label>
+                    <div className="relative mt-1.5">
+                      <User size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        id="admin-username"
+                        ref={firstRef}
+                        type="text"
+                        value={form.username}
+                        onChange={(e) => set("username")(e.target.value)}
+                        placeholder="admin"
+                        autoComplete="username"
+                        maxLength={24}
+                        className={`${field} pl-10`}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="admin-password" className={label}>Password</label>
+                    <div className="relative mt-1.5">
+                      <KeyRound size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        id="admin-password"
+                        type={show ? "text" : "password"}
+                        value={form.password}
+                        onChange={(e) => set("password")(e.target.value)}
+                        placeholder="Your admin password"
+                        autoComplete="current-password"
+                        aria-invalid={error ? "true" : undefined}
+                        aria-describedby={error ? "admin-password-message" : undefined}
+                        className={`${error ? fieldErr : field} pl-10 pr-12`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShow((s) => !s)}
+                        aria-label={show ? "Hide password" : "Show password"}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer rounded-xl p-2 text-slate-400 transition hover:bg-white/10 hover:text-slate-100"
+                      >
+                        {show ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    {error && (
+                      <p id="admin-password-message" className="mt-2 flex items-center gap-1.5 text-xs font-medium text-rose-300">
+                        <CircleAlert size={12} />
+                        {error}
+                      </p>
+                    )}
+                  </div>
+
+                  <button type="submit" className={`${BTN_PRIMARY} group w-full py-3`}>
+                    <Lock size={16} />
+                    Unlock organizer
+                    <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+                  </button>
+                </form>
+
+                <button
+                  type="button"
+                  onClick={onLeave}
+                  className="mt-4 w-full cursor-pointer rounded-xl py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/5"
+                >
+                  <ArrowRight size={14} className="mr-1.5 inline rotate-180" />
+                  Back to the class sign in
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function SignInScreen({ onSignIn, onRegister, onOpenAdminGate }) {
+      const [mode, setMode] = useState("signin");
+      const [form, setForm] = useState({ username: "", password: "", code: "" });
+      const [show, setShow] = useState(false);
+      const [error, setError] = useState("");
+      const [escape, setEscape] = useState(false);
+      const firstRef = useRef(null);
+      const cardRef = useRef(null);
+
+      useEffect(() => {
+        const t = setTimeout(() => firstRef.current && firstRef.current.focus(), 120);
+        return () => clearTimeout(t);
+      }, [mode]);
+
+      function fail(message) {
+        setError(message);
+        const el = cardRef.current;
+        if (!el || !el.animate) return;
+        el.animate(
+          [
+            { transform: "translateX(0px)" },
+            { transform: "translateX(-9px)" },
+            { transform: "translateX(9px)" },
+            { transform: "translateX(-5px)" },
+            { transform: "translateX(5px)" },
+            { transform: "translateX(0px)" },
+          ],
+          { duration: 420, easing: "ease-in-out" }
+        );
+      }
+
+      const set = (key) => (value) => {
+        setForm((f) => ({ ...f, [key]: value }));
+        if (error) setError("");
+        if (escape) setEscape(false);
+      };
+
+      function switchMode(next) {
+        setMode(next);
+        setError("");
+        setEscape(false);
+        setForm({ username: "", password: "", code: "" });
+      }
+
+      function submit(event) {
+        event.preventDefault();
+        const username = form.username.trim();
+        if (!username) return fail("Enter your username.");
+        if (!form.password) return fail("Enter your password.");
+
+        if (mode === "signin") {
+          const result = onSignIn(username, form.password);
+          if (!result.ok) {
+            setEscape(result.action === "admin-gate");
+            return fail(result.reason);
+          }
+          return;
+        }
+
+        if (form.password.length < 4) return fail("Use at least 4 characters for a password.");
+        if (!form.code.trim()) return fail("Enter the class code your admin gave you.");
+        const result = onRegister(username, form.password, form.code.trim());
+        if (!result.ok) return fail(result.reason);
+      }
+
+      const creating = mode === "register";
+
+      return (
+        <div className="relative flex min-h-screen items-center justify-center px-4 py-10">
+          <AmbientBackdrop />
+
+          <div ref={cardRef} className="relative z-10 w-full max-w-md animate-rise">
+            <div className="rounded-2xl border border-white/70 bg-white/85 p-8 shadow-lift backdrop-blur-xl sm:p-9 dark:border-slate-800 dark:bg-slate-900/80">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-glow">
+                {creating ? <UserPlus size={24} /> : <Lock size={24} />}
+              </div>
+
+              <h1 className="mt-6 text-center font-display text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+                BBA Section H Organizer
+              </h1>
+              <p className="mx-auto mt-2 max-w-xs text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                {creating
+                  ? "Create your login with the class code, then add your assignments to the class board."
+                  : "Sign in to add your assignments to the Section H board."}
+              </p>
+
+              <form onSubmit={submit} className="mt-7 space-y-4" noValidate key={mode}>
+                <Field id="signin-username" label="Username">
+                  <div className="relative">
+                    <User size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+                    <input
+                      id="signin-username"
+                      ref={firstRef}
+                      type="text"
+                      value={form.username}
+                      onChange={(e) => set("username")(e.target.value)}
+                      placeholder="Your name, for example Riya"
+                      autoComplete="username"
+                      maxLength={24}
+                      className={`${INPUT} py-3 pl-10`}
+                    />
+                  </div>
+                </Field>
+
+                <Field id="signin-password" label="Password" error={error}>
+                  <div className="relative">
+                    <KeyRound size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+                    <input
+                      id="signin-password"
+                      type={show ? "text" : "password"}
+                      value={form.password}
+                      onChange={(e) => set("password")(e.target.value)}
+                      placeholder={creating ? "At least 4 characters" : "Your password"}
+                      autoComplete={creating ? "new-password" : "current-password"}
+                      aria-invalid={error ? "true" : undefined}
+                      aria-describedby={error ? "signin-password-message" : undefined}
+                      className={`${error ? INPUT_ERR : INPUT} py-3 pl-10 pr-12`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShow((s) => !s)}
+                      aria-label={show ? "Hide password" : "Show password"}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                    >
+                      {show ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </Field>
+
+                {creating && (
+                  <Field id="signin-code" label="Class code" hint="Ask your admin if you do not have it.">
+                    <div className="relative">
+                      <ShieldCheck size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+                      <input
+                        id="signin-code"
+                        type="text"
+                        value={form.code}
+                        onChange={(e) => set("code")(e.target.value)}
+                        placeholder="SECTION-H"
+                        autoComplete="off"
+                        maxLength={24}
+                        className={`${INPUT} py-3 pl-10 uppercase`}
+                      />
+                    </div>
+                  </Field>
+                )}
+
+                <button type="submit" className={`${BTN_PRIMARY} group w-full py-3`}>
+                  {creating ? <UserPlus size={16} /> : <LogIn size={16} />}
+                  {creating ? "Create my account" : "Sign in"}
+                  <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+                </button>
+              </form>
+
+              {escape && (
+                <button
+                  type="button"
+                  onClick={onOpenAdminGate}
+                  className="mt-4 w-full cursor-pointer rounded-xl border border-slate-200/80 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-emerald-300 hover:text-emerald-700 dark:border-slate-700 dark:text-slate-300 dark:hover:border-emerald-500/40 dark:hover:text-emerald-300"
+                >
+                  <ShieldCheck size={14} className="mr-1.5 inline" />
+                  That is an admin login. Open the admin gate
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => switchMode(creating ? "signin" : "register")}
+                className="mt-4 w-full cursor-pointer rounded-xl py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
+              >
+                {creating ? "Already have an account? Sign in" : "New here? Create an account"}
+              </button>
+
+              <div className="mt-5 flex items-center justify-center gap-2 border-t border-slate-200/80 pt-5 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                <Users size={14} />
+                One shared class board, Section H, Fall 2026
+              </div>
+              <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
+                Everyone here shares the assignments posted by the admin. Logins on this device live
+                on {storageOriginLabel()}.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       Account panel (change own password, sign out)
+       ============================================================ */
+
+    function AccountModal({ open, onClose, account, onChangePassword, onSignOut }) {
+      const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
+      const [errors, setErrors] = useState({});
+      const [done, setDone] = useState(false);
+      const [reveal, setReveal] = useState(false);
+
+      useEffect(() => {
+        if (!open) return;
+        setPw({ current: "", next: "", confirm: "" });
+        setErrors({});
+        setDone(false);
+      }, [open]);
+
+      if (!open || !account) return null;
+
+      const role = ROLE_META[account.role] || ROLE_META.student;
+
+      function submit(event) {
+        event.preventDefault();
+        const found = {};
+        if (!pw.current) found.current = "Enter your current password.";
+        else if (pw.current !== account.password) found.current = "That is not your current password.";
+        if (!pw.next) found.next = "Choose a new password.";
+        else if (pw.next.length < 4) found.next = "Use at least 4 characters.";
+        else if (pw.next === pw.current) found.next = "Pick something different.";
+        if (pw.confirm !== pw.next) found.confirm = "The two passwords do not match.";
+
+        setErrors(found);
+        setDone(false);
+        if (Object.keys(found).length) return;
+
+        if (onChangePassword(pw.next)) {
+          setPw({ current: "", next: "", confirm: "" });
+          setDone(true);
+        } else {
+          setErrors({ current: "Could not save. Browser storage is unavailable." });
+        }
+      }
+
+      return (
+        <Modal
+          open={open}
+          onClose={onClose}
+          icon={User}
+          iconClass="bg-gradient-to-br from-emerald-500 to-teal-600"
+          title="Your account"
+          subtitle="Signed in on this device. Your name shows on everything you add."
+          maxWidth="max-w-md"
+        >
+          <div className="mt-6 flex items-center gap-3 rounded-xl bg-slate-50 p-3.5 dark:bg-slate-800/60">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-base font-bold text-white">
+              {account.username.trim().charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate font-display text-base font-semibold text-slate-900 dark:text-slate-50">{account.username}</p>
+              <span className={`mt-1 inline-flex rounded-lg px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset ${role.chip}`}>
+                {role.label}
+              </span>
+            </div>
+          </div>
+
+          <form onSubmit={submit} className="mt-5 space-y-4" noValidate>
+            <Field id="account-current" label="Current password" error={errors.current}>
+              <input
+                id="account-current"
+                type={reveal ? "text" : "password"}
+                value={pw.current}
+                onChange={(e) => { setPw({ ...pw, current: e.target.value }); setDone(false); }}
+                autoComplete="current-password"
+                aria-invalid={errors.current ? "true" : undefined}
+                aria-describedby={errors.current ? "account-current-message" : undefined}
+                className={errors.current ? INPUT_ERR : INPUT}
+              />
+            </Field>
+
+            <Field id="account-next" label="New password" error={errors.next}>
+              <input
+                id="account-next"
+                type={reveal ? "text" : "password"}
+                value={pw.next}
+                onChange={(e) => { setPw({ ...pw, next: e.target.value }); setDone(false); }}
+                autoComplete="new-password"
+                aria-invalid={errors.next ? "true" : undefined}
+                aria-describedby={errors.next ? "account-next-message" : undefined}
+                className={errors.next ? INPUT_ERR : INPUT}
+              />
+            </Field>
+
+            <Field id="account-confirm" label="Confirm new password" error={errors.confirm}>
+              <input
+                id="account-confirm"
+                type={reveal ? "text" : "password"}
+                value={pw.confirm}
+                onChange={(e) => { setPw({ ...pw, confirm: e.target.value }); setDone(false); }}
+                autoComplete="new-password"
+                aria-invalid={errors.confirm ? "true" : undefined}
+                aria-describedby={errors.confirm ? "account-confirm-message" : undefined}
+                className={errors.confirm ? INPUT_ERR : INPUT}
+              />
+            </Field>
+
+            <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={reveal}
+                onChange={(e) => setReveal(e.target.checked)}
+                className="h-4 w-4 cursor-pointer accent-emerald-600"
+              />
+              Show passwords
+            </label>
+
+            {done && (
+              <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-300">
+                <Check size={13} strokeWidth={3} />
+                Password updated.
+              </p>
+            )}
+
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-200/80 pt-4 sm:flex-row sm:justify-between dark:border-slate-800">
+              <button type="button" onClick={onSignOut} className={BTN_GHOST}>
+                <LogOut size={15} />
+                Sign out
+              </button>
+              <button type="submit" className={BTN_PRIMARY}>
+                <KeyRound size={16} />
+                Save password
+              </button>
+            </div>
+          </form>
+        </Modal>
+      );
+    }
+
+    /* ============================================================
+       Stats, toolbar controls, theme toggle
+       ============================================================ */
+
+    function StatCard({ label, count, total, meta }) {
+      const Icon = meta.icon;
+      const pct = total ? Math.round((count / total) * 100) : 0;
+      return (
+        <div className={`${CARD} p-4 transition hover:shadow-lift sm:p-5`}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{label}</p>
+              <p className="mt-1.5 font-display text-3xl font-semibold tracking-tight text-slate-900 tabular-nums dark:text-slate-50">{count}</p>
+            </div>
+            <div className={`rounded-xl p-2.5 ring-1 ring-inset ${meta.tile}`}>
+              <Icon size={18} />
+            </div>
+          </div>
+          <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+            <div className={`h-full rounded-full ${meta.bar} transition-all duration-500`} style={{ width: pct + "%" }} />
+          </div>
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{pct}% of all assignments</p>
+        </div>
+      );
+    }
+
+    function SelectControl({ icon: Icon, value, onChange, ariaLabel, children }) {
+      return (
+        <div className="relative">
+          <Icon size={15} className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+          <select
+            aria-label={ariaLabel}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-9 pr-9 text-sm font-medium text-slate-700 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200 dark:focus:border-emerald-500 dark:focus:bg-slate-900 dark:focus:ring-emerald-500/20"
+          >
+            {children}
+          </select>
+          <ChevronDown size={15} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+        </div>
+      );
+    }
+
+    function ThemeToggle({ theme, onChange }) {
+      const meta = THEME_META[theme] || THEME_META.system;
+      const Icon = meta.icon;
+      const next = THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length];
+      return (
+        <button
+          type="button"
+          onClick={() => onChange(next)}
+          className={BTN_ICON}
+          title={"Theme: " + meta.label + ". Switch to " + THEME_META[next].label + "."}
+          aria-label={"Theme: " + meta.label + ". Switch to " + THEME_META[next].label + "."}
+        >
+          <Icon size={16} />
+        </button>
+      );
+    }
+
+    /* ============================================================
+       Lightbox
+       ============================================================ */
+
+    function Lightbox({ srcs, index, onIndex, caption, onClose, onRemove, removeLabel = "Remove picture" }) {
+      const closeRef = useRef(null);
+      const [actualSize, setActualSize] = useState(false);
+      const total = srcs.length;
+      const current = Math.min(Math.max(index || 0, 0), Math.max(total - 1, 0));
+
+      /* Arrow keys read the freshest index through a ref, so the listener does
+         not need to be rebuilt on every step. */
+      const goRef = useRef(() => {});
+      goRef.current = (delta) => {
+        if (total < 2) return;
+        onIndex(Math.min(Math.max(current + delta, 0), total - 1));
+      };
+
+      useEffect(() => {
+        const previous = document.activeElement;
+        if (closeRef.current) closeRef.current.focus();
+        function onKeyDown(event) {
+          if (event.key === "Escape") onClose();
+          else if (event.key === "ArrowRight") goRef.current(1);
+          else if (event.key === "ArrowLeft") goRef.current(-1);
+        }
+        document.addEventListener("keydown", onKeyDown);
+        return () => {
+          document.removeEventListener("keydown", onKeyDown);
+          if (previous && previous.focus) previous.focus();
+        };
+      }, [onClose]);
+
+      const arrow =
+        "absolute top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/10 p-2.5 text-white ring-1 ring-white/20 transition hover:bg-white/25 disabled:opacity-30";
+
+      return (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={caption}
+          className="fixed inset-0 z-[70] flex animate-fade-in items-center justify-center bg-slate-900/85 p-4 backdrop-blur-md"
+          onClick={onClose}
+        >
+          <div className="absolute right-4 top-4 z-10 flex items-center gap-2 sm:right-6 sm:top-6" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setActualSize((v) => !v)}
+              aria-pressed={actualSize}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white ring-1 ring-white/20 transition hover:bg-white/25"
+            >
+              {actualSize ? <ZoomOut size={13} /> : <ZoomIn size={13} />}
+              {actualSize ? "Fit to screen" : "Actual size"}
+            </button>
+            {onRemove && (
+              <button
+                type="button"
+                onClick={() => { onRemove(current); onClose(); }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white ring-1 ring-white/20 transition hover:bg-rose-500/80"
+              >
+                <Trash2 size={13} />
+                {removeLabel}
+              </button>
+            )}
+            <button
+              ref={closeRef}
+              type="button"
+              onClick={onClose}
+              aria-label="Close picture"
+              className="rounded-xl bg-white/10 p-2 text-white ring-1 ring-white/20 transition hover:bg-white/25"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {total > 1 && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); goRef.current(-1); }}
+              disabled={current === 0}
+              aria-label="Previous picture"
+              className={arrow + " left-3 sm:left-6"}
+            >
+              <ChevronLeft size={20} />
+            </button>
+          )}
+
+          <figure
+            className={actualSize ? "h-full w-full overflow-auto" : "flex max-h-full flex-col items-center"}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={srcs[current]}
+              alt={caption + ", picture " + (current + 1)}
+              className={
+                actualSize
+                  ? "mx-auto my-2 max-w-none rounded-xl shadow-lift"
+                  : "max-h-[74vh] w-auto max-w-full rounded-2xl shadow-lift"
+              }
+            />
+            {!actualSize && (
+              <figcaption className="mt-4 max-w-lg text-center text-sm font-medium text-white/80">
+                {caption}
+                {total > 1 && <span className="mt-1 block text-xs text-white/60">Picture {current + 1} of {total}</span>}
+              </figcaption>
+            )}
+          </figure>
+
+          {total > 1 && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); goRef.current(1); }}
+              disabled={current === total - 1}
+              aria-label="Next picture"
+              className={arrow + " right-3 sm:right-6"}
+            >
+              <ChevronRight size={20} />
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    /* ============================================================
+       Assignment card
+       ============================================================ */
+
+    function copyText(text) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+      }
+      return Promise.resolve(fallbackCopy(text));
+    }
+
+    function fallbackCopy(text) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (err) { /* ignore */ }
+      document.body.removeChild(ta);
+    }
+
+    function AssignmentCard({
+      item, account, onCycleStatus, onEdit, onDelete,
+      onViewImage, onPickImage, onRemoveImage,
+      onViewSolutionImage, onPickSolutionImage, onRemoveSolutionImage,
+    }) {
+      const [open, setOpen] = useState(false);
+      const [copied, setCopied] = useState(false);
+      const [confirming, setConfirming] = useState(false);
+
+      /* The board is shared, but only the person who added a card (or an admin)
+         can change it. */
+      const isAdmin = Boolean(account && account.role === "admin");
+      const canManage = isAdmin || Boolean(account && item.ownerId === account.id);
+
+      const meta = STATUS_META[item.status] || STATUS_META.pending;
+      const StatusIcon = meta.icon;
+      const due = dueInfo(item.dueDate, item.status);
+      const solutionId = "solution-" + item.id;
+
+      const cardTone =
+        item.status === "completed"
+          ? "border-emerald-200/80 bg-emerald-50/40 dark:border-emerald-500/25 dark:bg-emerald-500/5"
+          : due.overdue
+          ? "border-rose-200/80 bg-rose-50/40 dark:border-rose-500/25 dark:bg-rose-500/5"
+          : "border-slate-200/70 bg-white dark:border-slate-800 dark:bg-slate-900/60";
+
+      function handleCopy() {
+        copyText(item.solution || "").then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1600);
+        });
+      }
+
+      function handleDelete() {
+        if (confirming) {
+          onDelete(item.id);
+          return;
+        }
+        setConfirming(true);
+        setTimeout(() => setConfirming(false), 3500);
+      }
+
+      return (
+        <article className={`group relative flex flex-col rounded-2xl border p-5 shadow-card backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-lift dark:shadow-card-dark ${cardTone}`}>
+          <div className="flex items-start justify-between gap-3">
+            <span className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
+              <span className={`h-1.5 w-1.5 rounded-full ${subjectDot(item.subject)}`} aria-hidden="true" />
+              {item.subject}
+            </span>
+
+            {canManage && (confirming ? (
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="rounded-lg bg-rose-600 px-2.5 py-2 text-[11px] font-semibold text-white transition hover:bg-rose-700"
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirming(false)}
+                  className="rounded-lg px-2 py-2 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                >
+                  Keep
+                </button>
+              </div>
+            ) : (
+              <div className="flex shrink-0 items-center gap-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+                <button
+                  type="button"
+                  onClick={() => onEdit(item)}
+                  aria-label={"Edit " + item.title}
+                  title="Edit assignment"
+                  className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                >
+                  <Pencil size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  aria-label={"Delete " + item.title}
+                  title="Delete assignment"
+                  className="rounded-lg p-2 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:hover:bg-rose-500/15 dark:hover:text-rose-300"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {item.images.length > 0 ? (
+            <div className="mt-3">
+              <div className={"grid gap-1.5 " + (item.images.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
+                {item.images.slice(0, 4).map((src, index) => (
+                  <div key={index} className="group/img relative overflow-hidden rounded-xl border border-slate-200/70 bg-slate-100 dark:border-slate-800 dark:bg-slate-800">
+                    <img
+                      src={src}
+                      alt={"Picture " + (index + 1) + " attached to " + item.title}
+                      loading="lazy"
+                      className="h-40 w-full object-cover transition duration-500 group-hover/img:scale-[1.04]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onViewImage(item, index)}
+                      title={"View picture " + (index + 1)}
+                      aria-label={"View picture " + (index + 1) + " of " + item.title}
+                      className="absolute inset-0 flex items-center justify-center bg-slate-900/0 opacity-0 transition duration-300 group-hover/img:bg-slate-900/35 group-hover/img:opacity-100 focus-visible:bg-slate-900/35 focus-visible:opacity-100"
+                    >
+                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/90 px-2.5 py-2 text-[11px] font-semibold text-slate-700">
+                        <Maximize2 size={12} />
+                        View
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveImage(item.id, index)}
+                      aria-label={"Remove picture " + (index + 1)}
+                      title="Remove picture"
+                      className="absolute right-2 top-2 rounded-lg bg-white/90 p-2 text-slate-600 opacity-0 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100 group-hover/img:opacity-100"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                    {index === 3 && item.images.length > 4 && (
+                      <span className="pointer-events-none absolute bottom-2 right-2 rounded-lg bg-slate-900/75 px-2 py-1 text-[11px] font-bold text-white">
+                        +{item.images.length - 4} more
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {item.images.length < MAX_PICTURES && (
+                <button
+                  type="button"
+                  onClick={() => onPickImage(item.id)}
+                  className="mt-2 flex min-h-[36px] w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 text-[11px] font-semibold text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50/60 hover:text-emerald-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-emerald-500/40 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-300"
+                >
+                  <ImagePlus size={12} />
+                  Add more pictures
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onPickImage(item.id)}
+              className="mt-3 flex min-h-[40px] w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 text-[11px] font-semibold text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50/60 hover:text-emerald-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400 dark:hover:border-emerald-500/40 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-300"
+            >
+              <ImagePlus size={14} />
+              Add pictures
+            </button>
+          )}
+
+          <h3 className="mt-3 font-display text-base font-semibold leading-snug text-slate-900 dark:text-slate-50">{item.title}</h3>
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+            <span className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+              <CalendarDays size={13} className={due.overdue ? "text-rose-500" : "text-slate-500 dark:text-slate-400"} />
+              {formatDate(item.dueDate)}
+            </span>
+            {due.label && <span className={`inline-flex items-center gap-1.5 font-semibold ${due.tone}`}>{due.label}</span>}
+            <span className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400" title={"Added by " + (item.ownerName || "an earlier save")}>
+              <User size={12} />
+              {item.ownerName || "Earlier save"}
+            </span>
+          </div>
+
+          <p className="mt-3 text-sm leading-relaxed text-slate-600 line-clamp-3 dark:text-slate-300">
+            {item.description || "No description yet."}
+          </p>
+
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => onCycleStatus(item.id)}
+              title="Change status"
+              aria-label={"Status: " + meta.label + ". Activate to move to " + STATUS_META[NEXT_STATUS[item.status]].label + "."}
+              className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold ring-1 ring-inset transition active:scale-95 ${meta.chip}`}
+            >
+              <StatusIcon size={13} className={item.status === "in-progress" ? "transition group-hover:animate-spin" : ""} />
+              {meta.label}
+            </button>
+            <span className="hidden text-[11px] text-slate-500 sm:inline dark:text-slate-400">click status to cycle</span>
+          </div>
+
+          {item.solution || item.solutionImages.length > 0 ? (
+            <div className="mt-auto pt-4">
+              <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                aria-expanded={open}
+                aria-controls={solutionId}
+                className={`flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${
+                  open
+                    ? "bg-emerald-600 text-white shadow-[0_10px_24px_-14px_rgba(16,185,129,0.9)]"
+                    : "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/25 dark:hover:bg-emerald-500/20"
+                }`}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Lightbulb size={15} />
+                  {open ? "Hide solution" : "View solution"}
+                </span>
+                <ChevronDown size={16} className={`transition-transform duration-300 ${open ? "rotate-180" : ""}`} />
+              </button>
+
+              <div id={solutionId} className={`grid transition-[grid-template-rows] duration-300 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                <div className="overflow-hidden">
+                  <div className="mt-3 rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-4 dark:border-emerald-500/25 dark:bg-emerald-500/10" aria-hidden={!open}>
+                    <div className="flex items-center justify-between gap-2 border-b border-emerald-200/70 pb-2.5 dark:border-emerald-500/20">
+                      <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">
+                        Answer and solution
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopy}
+                        tabIndex={open ? 0 : -1}
+                        className={`inline-flex min-h-[32px] items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                          copied
+                            ? "bg-emerald-600 text-white"
+                            : "bg-white/80 text-emerald-700 ring-1 ring-emerald-200 hover:bg-white dark:bg-slate-900/70 dark:text-emerald-300 dark:ring-emerald-500/30 dark:hover:bg-slate-900"
+                        }`}
+                      >
+                        {copied ? <Check size={12} strokeWidth={3} /> : <Copy size={12} />}
+                        {copied ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                    {item.solution && (
+                      <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-200">{item.solution}</p>
+                    )}
+
+                    {item.solutionImages.length > 0 && (
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        {item.solutionImages.slice(0, 6).map((src, index) => (
+                          <div key={index} className="group/sol relative overflow-hidden rounded-xl border border-emerald-200/80 bg-white/60 dark:border-emerald-500/25 dark:bg-slate-900/50">
+                            <img
+                              src={src}
+                              alt={"Answer picture " + (index + 1) + " for " + item.title}
+                              loading="lazy"
+                              className="h-20 w-full object-cover transition duration-500 group-hover/sol:scale-[1.03]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => onViewSolutionImage(item, index)}
+                              tabIndex={open ? 0 : -1}
+                              title={"View answer picture " + (index + 1)}
+                              aria-label={"View answer picture " + (index + 1) + " of " + item.title}
+                              className="absolute inset-0 flex items-center justify-center bg-slate-900/0 opacity-0 transition duration-300 group-hover/sol:bg-slate-900/35 group-hover/sol:opacity-100 focus-visible:bg-slate-900/35 focus-visible:opacity-100"
+                            >
+                              <Maximize2 size={12} className="text-white" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onRemoveSolutionImage(item.id, index)}
+                              tabIndex={open ? 0 : -1}
+                              aria-label={"Remove answer picture " + (index + 1)}
+                              className="absolute right-1 top-1 rounded-lg bg-white/90 p-1 text-slate-600 opacity-0 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100 group-hover/sol:opacity-100"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {item.solutionImages.length < MAX_PICTURES && (
+                      <button
+                        type="button"
+                        onClick={() => onPickSolutionImage(item.id)}
+                        tabIndex={open ? 0 : -1}
+                        className={"mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-emerald-200 bg-white/50 text-[11px] font-semibold text-emerald-700 transition hover:bg-white dark:border-emerald-500/25 dark:bg-slate-900/40 dark:text-emerald-300 dark:hover:bg-slate-900 " + (item.solutionImages.length ? "min-h-[36px]" : "min-h-[40px]")}
+                      >
+                        <ImagePlus size={13} />
+                        {item.solutionImages.length ? "Add more answer pictures" : "Attach pictures of the answer"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-auto pt-4">
+              <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-3.5 py-2.5 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
+                <Sparkles size={13} />
+                No solution yet
+              </div>
+            </div>
+          )}
+        </article>
+      );
+    }
+
+    /* ============================================================
+       Task modal (add and edit)
+       ============================================================ */
+
+    /* Shared picture picker. Used in the add form and, in compact form, inside
+       the solution accordion, so pictures can always be added or removed in place. */
+    function PictureGrid({ images, busy, onPick, onRemove, tone = "slate", compact = false, emptyLabel = "Add pictures" }) {
+      const frame = tone === "emerald"
+        ? "border-emerald-200/80 bg-white/60 dark:border-emerald-500/25 dark:bg-slate-900/50"
+        : "border-slate-200/70 bg-slate-100 dark:border-slate-700 dark:bg-slate-800";
+      const dashed = tone === "emerald"
+        ? "border-emerald-200 bg-white/50 text-emerald-700 hover:bg-white dark:border-emerald-500/25 dark:bg-slate-900/40 dark:text-emerald-300 dark:hover:bg-slate-900"
+        : "border-slate-200 bg-slate-50/60 text-slate-500 hover:border-emerald-300 hover:bg-emerald-50/60 hover:text-emerald-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400 dark:hover:border-emerald-500/40 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-300";
+      const full = images.length >= MAX_PICTURES;
+
+      return (
+        <div>
+          {images.length > 0 && (
+            <div className={"grid gap-2 " + (compact ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3")}>
+              {images.map((src, index) => (
+                <div key={index} className={"relative overflow-hidden rounded-xl border " + frame}>
+                  <img
+                    src={src}
+                    alt={"Picture " + (index + 1)}
+                    className={compact ? "h-20 w-full object-cover" : "h-28 w-full object-cover"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onRemove(index)}
+                    aria-label={"Remove picture " + (index + 1)}
+                    title="Remove picture"
+                    className="absolute right-1.5 top-1.5 rounded-lg bg-white/90 p-1.5 text-slate-600 transition hover:bg-rose-50 hover:text-rose-600"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                  <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-md bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    {index + 1}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={onPick}
+            disabled={busy > 0 || full}
+            className={
+              "flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed px-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 " +
+              (images.length ? "mt-2 min-h-[40px] text-[11px]" : "h-24 text-sm") + " " + dashed
+            }
+          >
+            {busy > 0 ? <LoaderCircle size={14} className="animate-spin" /> : <ImagePlus size={14} />}
+            {busy > 0
+              ? "Resizing " + busy + " picture" + (busy === 1 ? "" : "s")
+              : full
+                ? "Maximum of " + MAX_PICTURES + " pictures"
+                : images.length ? "Add more pictures" : emptyLabel}
+          </button>
+
+          {images.length > 0 && (
+            <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+              {images.length} of {MAX_PICTURES} pictures
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    function TaskModal({ open, onClose, onSubmit, subjects, initial }) {
+      const blank = { title: "", subject: "", description: "", solution: "", dueDate: "", status: "pending", images: [], solutionImages: [] };
+      const [form, setForm] = useState(blank);
+      const [errors, setErrors] = useState({});
+      const [imageErrors, setImageErrors] = useState({ images: "", solutionImages: "" });
+      const [busy, setBusy] = useState({ images: 0, solutionImages: 0 });
+      const titleRef = useRef(null);
+      const subjectRef = useRef(null);
+      const dueRef = useRef(null);
+      const descriptionRef = useRef(null);
+      const fileRef = useRef(null);
+      const solutionFileRef = useRef(null);
+
+      const fieldRefs = { title: titleRef, subject: subjectRef, dueDate: dueRef, description: descriptionRef };
+      const editing = Boolean(initial);
+
+      useEffect(() => {
+        if (!open) return;
+        setForm(
+          initial
+            ? {
+                title: initial.title || "",
+                subject: initial.subject || "",
+                description: initial.description || "",
+                solution: initial.solution || "",
+                dueDate: initial.dueDate || "",
+                status: initial.status || "pending",
+                images: toImageList(initial.images, initial.image),
+                solutionImages: toImageList(initial.solutionImages, initial.solutionImage),
+              }
+            : blank
+        );
+        setErrors({});
+        setImageErrors({ images: "", solutionImages: "" });
+        setBusy({ images: 0, solutionImages: 0 });
+      }, [open, initial]);
+
+      if (!open) return null;
+
+      const set = (key) => (value) => {
+        setForm((f) => ({ ...f, [key]: value }));
+        setErrors((e) => (e[key] ? { ...e, [key]: undefined } : e));
+      };
+
+      async function handleImages(event, key) {
+        const input = event.target;
+        const picked = Array.from(input.files || []);
+        input.value = "";
+        if (!picked.length) return;
+
+        const existing = form[key] || [];
+        const room = Math.max(0, MAX_PICTURES - existing.length);
+        if (!room) {
+          setImageErrors((e) => ({ ...e, [key]: "Remove a picture first, the limit is " + MAX_PICTURES + "." }));
+          return;
+        }
+
+        const files = picked.slice(0, room);
+        /* The first picture keeps full quality, the rest are encoded tighter so a
+           set of six still fits comfortably inside the browser storage budget. */
+        const budget = existing.length ? IMAGE_CHAR_BUDGET_FILL : IMAGE_CHAR_BUDGET;
+        setBusy((b) => ({ ...b, [key]: b[key] + files.length }));
+
+        const added = [];
+        let failure = "";
+        for (const file of files) {
+          try {
+            added.push(await processImage(file, budget));
+          } catch (err) {
+            failure = err.message || "One picture could not be loaded.";
+          }
+        }
+        setBusy((b) => ({ ...b, [key]: Math.max(0, b[key] - files.length) }));
+        if (added.length) setForm((f) => ({ ...f, [key]: [...(f[key] || []), ...added] }));
+        setImageErrors((e) => ({
+          ...e,
+          [key]: failure || (picked.length > room ? "Added " + added.length + " of " + picked.length + " pictures. " + MAX_PICTURES + " is the limit." : ""),
+        }));
+      }
+
+      function validate() {
+        const found = {};
+        if (!form.title.trim()) found.title = "Add a title.";
+        else if (form.title.trim().length < 3) found.title = "Use at least 3 characters.";
+        if (!form.subject.replace(/\s+/g, " ").trim()) found.subject = "Choose or type a subject.";
+        if (!form.description.trim()) found.description = "Add a short description.";
+        if (!form.dueDate) found.dueDate = "Pick a due date.";
+        return found;
+      }
+
+      const missing = REQUIRED_FIELDS.filter((field) => errors[field.key]);
+
+      function submit(event) {
+        event.preventDefault();
+        const found = validate();
+        setErrors(found);
+
+        const firstBad = REQUIRED_FIELDS.find((field) => found[field.key]);
+        if (firstBad) {
+          /* The form is one long scrolling column, so an empty field used to
+             fail in silence. Walk the user to it and focus it. */
+          setTimeout(() => {
+            const node = fieldRefs[firstBad.key].current;
+            if (!node) return;
+            node.scrollIntoView({ behavior: "smooth", block: "center" });
+            node.focus({ preventScroll: true });
+          }, 40);
+          return;
+        }
+
+        onSubmit({
+          title: form.title.trim(),
+          subject: form.subject.replace(/\s+/g, " ").trim(),
+          description: form.description.trim(),
+          solution: form.solution.trim(),
+          dueDate: form.dueDate,
+          status: form.status,
+          images: form.images,
+          solutionImages: form.solutionImages,
+        });
+      }
+
+      return (
+        <Modal
+          open={open}
+          onClose={onClose}
+          focusRef={titleRef}
+          icon={editing ? Pencil : PenLine}
+          iconClass="bg-gradient-to-br from-emerald-500 to-teal-600"
+          title={editing ? "Edit assignment" : "Add new assignment"}
+          subtitle={editing ? "Update any detail, including the picture and solution." : "Capture the task now, then add the picture and solution whenever you have them."}
+        >
+          <form onSubmit={submit} className="mt-6 grid gap-4 sm:grid-cols-2" noValidate>
+            <Field id="task-title" label="Title" required error={errors.title} className="sm:col-span-2">
+              <input
+                id="task-title"
+                ref={titleRef}
+                type="text"
+                value={form.title}
+                onChange={(e) => set("title")(e.target.value)}
+                placeholder="Ratio Analysis: Walmart vs. Target"
+                aria-invalid={errors.title ? "true" : undefined}
+                aria-describedby={errors.title ? "task-title-message" : undefined}
+                className={errors.title ? INPUT_ERR : INPUT}
+              />
+            </Field>
+
+            <Field id="task-subject" label="Subject" required error={errors.subject} hint="Pick from the list, or just type a new subject name.">
+              <div className="relative">
+                <BookOpen size={15} className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+                <input
+                  id="task-subject"
+                  ref={subjectRef}
+                  type="text"
+                  list="task-subject-options"
+                  autoComplete="off"
+                  maxLength={60}
+                  value={form.subject}
+                  onChange={(e) => set("subject")(e.target.value)}
+                  placeholder="e.g. Business Communication"
+                  aria-invalid={errors.subject ? "true" : undefined}
+                  aria-describedby={errors.subject ? "task-subject-message" : undefined}
+                  className={`${errors.subject ? INPUT_ERR : INPUT} pl-9`}
+                />
+                <datalist id="task-subject-options">
+                  {subjects.map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              </div>
+            </Field>
+
+            <Field id="task-due" label="Due date" required error={errors.dueDate}>
+              <div className="relative">
+                <CalendarDays size={15} className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+                <input
+                  id="task-due"
+                  ref={dueRef}
+                  type="date"
+                  value={form.dueDate}
+                  onChange={(e) => set("dueDate")(e.target.value)}
+                  aria-invalid={errors.dueDate ? "true" : undefined}
+                  aria-describedby={errors.dueDate ? "task-due-message" : undefined}
+                  className={`${errors.dueDate ? INPUT_ERR : INPUT} pl-9`}
+                />
+              </div>
+            </Field>
+
+            <Field id="task-description" label="Description" required error={errors.description} className="sm:col-span-2">
+              <textarea
+                id="task-description"
+                ref={descriptionRef}
+                rows={3}
+                value={form.description}
+                onChange={(e) => set("description")(e.target.value)}
+                placeholder="What has to be submitted, and what does the brief ask for?"
+                aria-invalid={errors.description ? "true" : undefined}
+                aria-describedby={errors.description ? "task-description-message" : undefined}
+                className={`${errors.description ? INPUT_ERR : INPUT} leading-relaxed`}
+              />
+            </Field>
+
+            <Field
+              id="task-picture"
+              label="Pictures of the brief"
+              optional
+              className="sm:col-span-2"
+              error={imageErrors.images}
+              hint="The brief, whiteboard or notes. Select several files at once. Stored in this browser only."
+            >
+              <PictureGrid
+                images={form.images}
+                busy={busy.images}
+                onPick={() => fileRef.current && fileRef.current.click()}
+                onRemove={(index) => setForm((f) => ({ ...f, images: f.images.filter((_, i) => i !== index) }))}
+              />
+              <input
+                id="task-picture"
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => handleImages(e, "images")}
+              />
+            </Field>
+
+            <Field
+              id="task-solution"
+              label="Answer or solution"
+              optional
+              className="sm:col-span-2"
+              hint="Hidden behind the View solution button on the card. Handy for revision."
+            >
+              <textarea
+                id="task-solution"
+                rows={4}
+                value={form.solution}
+                onChange={(e) => set("solution")(e.target.value)}
+                placeholder="Paste the model answer, key steps or marking criteria here."
+                className={`${INPUT} leading-relaxed`}
+              />
+            </Field>
+
+            <Field
+              id="task-solution-picture"
+              label="Pictures of the answer"
+              optional
+              className="sm:col-span-2"
+              error={imageErrors.solutionImages}
+              hint="Shots of the written answer or working. Select several files at once."
+            >
+              <div className="mt-1">
+                <PictureGrid
+                  tone="emerald"
+                  compact
+                  images={form.solutionImages}
+                  busy={busy.solutionImages}
+                  onPick={() => solutionFileRef.current && solutionFileRef.current.click()}
+                  onRemove={(index) => setForm((f) => ({ ...f, solutionImages: f.solutionImages.filter((_, i) => i !== index) }))}
+                  emptyLabel="Attach pictures of the answer"
+                />
+              </div>
+              <input
+                ref={solutionFileRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => handleImages(e, "solutionImages")}
+              />
+            </Field>
+
+            <div className="sm:col-span-2" role="group" aria-label="Status">
+              <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Status</span>
+              <div className="grid grid-cols-3 gap-2">
+                {STATUS_ORDER.map((key) => {
+                  const meta = STATUS_META[key];
+                  const Icon = meta.icon;
+                  const active = form.status === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => set("status")(key)}
+                      aria-pressed={active}
+                      className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-xs font-semibold ring-1 transition ${
+                        active
+                          ? meta.active + " ring-inset"
+                          : "bg-white text-slate-500 ring-slate-200 hover:bg-slate-50 hover:text-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:ring-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                      }`}
+                    >
+                      <Icon size={14} />
+                      {meta.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {missing.length > 0 && (
+              <p
+                role="alert"
+                className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-xs font-medium text-rose-700 sm:col-span-2 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
+              >
+                <CircleAlert size={14} className="mt-px shrink-0" />
+                <span>
+                  Still needed: {missing.map((field) => field.label).join(", ")}.{" "}
+                  {missing.length === 1 ? "That field is" : "Those fields are"} highlighted above.
+                </span>
+              </p>
+            )}
+
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-200/80 pt-4 sm:col-span-2 sm:flex-row sm:justify-end dark:border-slate-800">
+              <button type="button" onClick={onClose} className={BTN_GHOST}>
+                Cancel
+              </button>
+              <button type="submit" className={BTN_PRIMARY}>
+                {editing ? <Check size={16} /> : <Plus size={16} />}
+                {editing ? "Save changes" : "Add assignment"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      );
+    }
+
+    /* ============================================================
+       Admin settings (password, accounts, subjects, data)
+       ============================================================ */
+
+    function makeClassCode() {
+      const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      let out = "";
+      for (let i = 0; i < 6; i += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+      return "H-" + out;
+    }
+
+    function AccountsPanel({
+      accounts, items, classCode, viewer,
+      onAddAccount, onRenameAccount, onSetRole, onSetAccountPassword, onDeleteAccount, onClassCode,
+    }) {
+      const [draft, setDraft] = useState({ username: "", password: "", role: "student" });
+      const [error, setError] = useState("");
+      const [notice, setNotice] = useState("");
+      const [showCode, setShowCode] = useState(false);
+      const [renaming, setRenaming] = useState(null);
+      const [renameValue, setRenameValue] = useState("");
+      const [pwFor, setPwFor] = useState(null);
+      const [pwValue, setPwValue] = useState("");
+      const [dropFor, setDropFor] = useState(null);
+
+      useEffect(() => {
+        if (!notice) return;
+        const t = setTimeout(() => setNotice(""), 2600);
+        return () => clearTimeout(t);
+      }, [notice]);
+
+      const countFor = (id) => items.filter((i) => i.ownerId === id).length;
+      const adminCount = accounts.filter((a) => a.role === "admin").length;
+      const adminUrl = adminGateUrl();
+      const originLabel = storageOriginLabel();
+
+      async function copyAdminLink() {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(adminUrl);
+            setNotice("Admin gate link copied");
+            return;
+          }
+        } catch (err) {
+          /* fall through to the inline copy */
+        }
+        setNotice(adminUrl);
+      }
+
+      function addAccount(event) {
+        event.preventDefault();
+        const username = draft.username.replace(/\s+/g, " ").trim();
+        setError("");
+        setNotice("");
+        if (username.length < 2) { setError("Usernames need at least 2 characters."); return; }
+        if (username.length > 24) { setError("Keep usernames under 24 characters."); return; }
+        if (accounts.some((a) => a.username.toLowerCase() === username.toLowerCase())) {
+          setError("That username is already taken.");
+          return;
+        }
+        if (draft.password.length < 4) { setError("Give them a password of at least 4 characters."); return; }
+        if (!onAddAccount({ username, password: draft.password, role: draft.role })) {
+          setError("Could not save. Browser storage is unavailable.");
+          return;
+        }
+        setDraft({ username: "", password: "", role: "student" });
+        setNotice(username + " can sign in now");
+      }
+
+      function commitRename(id) {
+        const name = renameValue.replace(/\s+/g, " ").trim();
+        setError("");
+        if (name.length < 2 || name.length > 24) { setError("Usernames need between 2 and 24 characters."); return; }
+        if (accounts.some((a) => a.id !== id && a.username.toLowerCase() === name.toLowerCase())) {
+          setError("That username is already taken.");
+          return;
+        }
+        if (!onRenameAccount(id, name)) { setError("Could not save. Browser storage is unavailable."); return; }
+        setRenaming(null);
+        setNotice("Renamed to " + name);
+      }
+
+      function commitPassword(id) {
+        setError("");
+        if (pwValue.length < 4) { setError("Passwords need at least 4 characters."); return; }
+        if (!onSetAccountPassword(id, pwValue)) { setError("Could not save. Browser storage is unavailable."); return; }
+        setPwFor(null);
+        setPwValue("");
+        setNotice("Password reset");
+      }
+
+      const miniBtn =
+        "cursor-pointer rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-800";
+
+      return (
+        <div className="mt-6 space-y-6">
+          <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-4 dark:border-emerald-500/25 dark:bg-emerald-500/10">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">
+                <ShieldCheck size={14} />
+                Class code
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => setShowCode((s) => !s)} className={miniBtn} aria-pressed={showCode}>
+                  {showCode ? <EyeOff size={12} /> : <Eye size={12} />}
+                  {showCode ? "Hide" : "Show"}
+                </button>
+                <button type="button" onClick={() => onClassCode(makeClassCode())} className={miniBtn}>
+                  <RefreshCw size={12} />
+                  New code
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 font-mono text-lg font-semibold tracking-wide text-emerald-800 dark:text-emerald-200">
+              {showCode ? classCode : "••••••••"}
+            </p>
+            <p className="mt-1.5 text-xs leading-relaxed text-emerald-900/70 dark:text-emerald-200/70">
+              Students type this on the sign in screen to create their own login. A new code does
+              not remove anyone who already signed up.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200/80 p-4 dark:border-slate-700">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                <Lock size={14} />
+                Admin gate
+              </span>
+              <button type="button" onClick={copyAdminLink} className={miniBtn}>
+                Copy link
+              </button>
+            </div>
+            <p
+              className="mt-2 truncate rounded-lg bg-slate-100 px-3 py-2 font-mono text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              title={adminUrl}
+            >
+              {adminUrl}
+            </p>
+            <p className="mt-1.5 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+              Keep this link to yourself. It is the only route to the admin gate, and it opens even
+              when nobody is signed in. Accounts and the board stay in this browser profile on{" "}
+              {originLabel}, so they do not travel between devices.
+            </p>
+          </div>
+
+          <form onSubmit={addAccount} className="rounded-xl border border-slate-200/80 p-4 dark:border-slate-700">
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+              Add someone yourself
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field id="new-username" label="Username">
+                <input
+                  id="new-username"
+                  type="text"
+                  value={draft.username}
+                  onChange={(e) => { setDraft({ ...draft, username: e.target.value }); setError(""); }}
+                  placeholder="Riya"
+                  autoComplete="off"
+                  maxLength={24}
+                  className={INPUT}
+                />
+              </Field>
+              <Field id="new-password" label="Password">
+                <input
+                  id="new-password"
+                  type="text"
+                  value={draft.password}
+                  onChange={(e) => { setDraft({ ...draft, password: e.target.value }); setError(""); }}
+                  placeholder="At least 4 characters"
+                  autoComplete="off"
+                  className={INPUT}
+                />
+              </Field>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDraft({ ...draft, role: draft.role === "student" ? "admin" : "student" })}
+                className={miniBtn}
+                aria-pressed={draft.role === "admin"}
+              >
+                <ShieldCheck size={12} />
+                {draft.role === "admin" ? "Role: Admin" : "Role: Student"}
+              </button>
+              <button type="submit" className={`${miniBtn} ring-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:ring-emerald-500/30 dark:hover:bg-emerald-500/10`}>
+                <UserPlus size={12} />
+                Add account
+              </button>
+            </div>
+          </form>
+
+          {error && (
+            <p className="flex items-center gap-1.5 text-xs font-medium text-rose-600 dark:text-rose-400">
+              <CircleAlert size={12} />
+              {error}
+            </p>
+          )}
+          {notice && (
+            <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-300">
+              <Check size={12} strokeWidth={3} />
+              {notice}
+            </p>
+          )}
+
+          <ul className="space-y-2">
+            {accounts.map((a) => {
+              const role = ROLE_META[a.role] || ROLE_META.student;
+              const lastAdmin = a.role === "admin" && adminCount === 1;
+              const busy = renaming === a.id || pwFor === a.id || dropFor === a.id;
+
+              return (
+                <li key={a.id} className="rounded-xl border border-slate-200/80 p-3 dark:border-slate-700">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      {a.username.charAt(0).toUpperCase()}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">
+                        {a.username}
+                        {viewer && a.id === viewer.id && (
+                          <span className="ml-1.5 text-[11px] font-normal text-slate-400">you</span>
+                        )}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {countFor(a.id)} {countFor(a.id) === 1 ? "assignment" : "assignments"}
+                        {a.lastSeen ? " · last seen " + new Date(a.lastSeen).toLocaleDateString() : " · never signed in"}
+                      </p>
+                    </div>
+                    <span className={"shrink-0 rounded-lg px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset " + role.chip}>
+                      {role.label}
+                    </span>
+                  </div>
+
+                  {renaming === a.id && (
+                    <div className="mt-3 flex flex-wrap items-end gap-2">
+                      <Field id={"rename-" + a.id} label="New username" className="min-w-[160px] flex-1">
+                        <input
+                          id={"rename-" + a.id}
+                          type="text"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          maxLength={24}
+                          className={INPUT}
+                        />
+                      </Field>
+                      <button type="button" onClick={() => commitRename(a.id)} className={miniBtn + " mb-1 ring-emerald-200 text-emerald-700 dark:ring-emerald-500/30"}>Save</button>
+                      <button type="button" onClick={() => setRenaming(null)} className={miniBtn + " mb-1"}>Cancel</button>
+                    </div>
+                  )}
+
+                  {pwFor === a.id && (
+                    <div className="mt-3 flex flex-wrap items-end gap-2">
+                      <Field id={"pw-" + a.id} label="New password" className="min-w-[160px] flex-1">
+                        <input
+                          id={"pw-" + a.id}
+                          type="text"
+                          value={pwValue}
+                          onChange={(e) => setPwValue(e.target.value)}
+                          autoComplete="off"
+                          className={INPUT}
+                        />
+                      </Field>
+                      <button type="button" onClick={() => commitPassword(a.id)} className={miniBtn + " mb-1 ring-emerald-200 text-emerald-700 dark:ring-emerald-500/30"}>Save</button>
+                      <button type="button" onClick={() => setPwFor(null)} className={miniBtn + " mb-1"}>Cancel</button>
+                    </div>
+                  )}
+
+                  {dropFor === a.id && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-rose-50 px-3 py-2.5 dark:bg-rose-500/10">
+                      <p className="flex-1 text-xs font-medium text-rose-700 dark:text-rose-300">
+                        {countFor(a.id) > 0
+                          ? a.username + " still has " + countFor(a.id) + " assignment(s) on the board."
+                          : "Remove " + a.username + "?"}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => { setDropFor(null); onDeleteAccount(a.id); }}
+                        disabled={countFor(a.id) > 0}
+                        className={miniBtn + " mb-0 border-0 bg-rose-600 text-white ring-0 hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-40"}
+                      >
+                        Remove
+                      </button>
+                      <button type="button" onClick={() => setDropFor(null)} className={miniBtn}>Keep</button>
+                    </div>
+                  )}
+
+                  {!busy && (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      <button type="button" onClick={() => { setPwFor(a.id); setPwValue(""); setError(""); }} className={miniBtn}>
+                        <KeyRound size={12} />
+                        Reset password
+                      </button>
+                      <button type="button" onClick={() => { setRenaming(a.id); setRenameValue(a.username); setError(""); }} className={miniBtn}>
+                        <Pencil size={12} />
+                        Rename
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSetRole(a.id, a.role === "admin" ? "student" : "admin")}
+                        disabled={lastAdmin}
+                        title={lastAdmin ? "The class needs at least one admin" : ""}
+                        className={miniBtn}
+                      >
+                        <ShieldCheck size={12} />
+                        {a.role === "admin" ? "Make student" : "Make admin"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDropFor(a.id)}
+                        className={miniBtn + " text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-300 dark:hover:bg-rose-500/10"}
+                      >
+                        <Trash2 size={12} />
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      );
+    }
+
+    function SettingsModal({
+      open, onClose, config, account, items, subjects,
+      onSaveOwnPassword, onAddAccount, onRenameAccount, onSetRole, onSetAccountPassword, onDeleteAccount, onClassCode,
+      onAddSubject, onRenameSubject, onDeleteSubject, onImport,
+    }) {
+      const [tab, setTab] = useState("password");
+      const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
+      const [pwErrors, setPwErrors] = useState({});
+      const [saved, setSaved] = useState(false);
+      const [reveal, setReveal] = useState(false);
+      const [newSubject, setNewSubject] = useState("");
+      const [editing, setEditing] = useState(null);
+      const [editValue, setEditValue] = useState("");
+      const [formError, setFormError] = useState("");
+      const [pendingImport, setPendingImport] = useState(null);
+      const [usage, setUsage] = useState("");
+      const importRef = useRef(null);
+
+      useEffect(() => {
+        if (!open) return;
+        setTab("password");
+        setPw({ current: "", next: "", confirm: "" });
+        setPwErrors({});
+        setSaved(false);
+        setReveal(false);
+        setNewSubject("");
+        setEditing(null);
+        setFormError("");
+        setPendingImport(null);
+        setUsage(storageUsageText());
+      }, [open]);
+
+      if (!open) return null;
+
+      const usageCount = (name) => items.filter((i) => i.subject === name).length;
+
+      function savePassword(event) {
+        event.preventDefault();
+        const found = {};
+        if (!pw.current) found.current = "Enter your current password.";
+        else if (pw.current !== account.password) found.current = "That is not your current password.";
+        if (!pw.next) found.next = "Choose a new password.";
+        else if (pw.next.length < 4) found.next = "Use at least 4 characters.";
+        else if (pw.next === account.password) found.next = "Pick something different from the current password.";
+        if (pw.confirm !== pw.next) found.confirm = "The two passwords do not match.";
+
+        setPwErrors(found);
+        setSaved(false);
+        if (Object.keys(found).length) return;
+
+        if (onSaveOwnPassword(pw.next)) {
+          setPw({ current: "", next: "", confirm: "" });
+          setSaved(true);
+          setTimeout(() => setSaved(false), 5000);
+        } else {
+          setPwErrors({ current: "Could not save. Browser storage is unavailable." });
+        }
+      }
+
+      function addSubject(event) {
+        event.preventDefault();
+        const name = newSubject.trim();
+        setFormError("");
+        if (!name) { setFormError("Type a subject name first."); return; }
+        if (name.length > 40) { setFormError("Keep subject names under 40 characters."); return; }
+        if (subjects.some((s) => s.toLowerCase() === name.toLowerCase())) { setFormError("That subject already exists."); return; }
+        if (onAddSubject(name)) setNewSubject("");
+        else setFormError("Could not save. Browser storage is unavailable.");
+      }
+
+      function commitEdit() {
+        const name = editValue.trim();
+        setFormError("");
+        if (!name) { setFormError("A subject name cannot be empty."); return; }
+        if (name !== editing && subjects.some((s) => s.toLowerCase() === name.toLowerCase())) {
+          setFormError("That subject already exists.");
+          return;
+        }
+        if (name !== editing) onRenameSubject(editing, name);
+        setEditing(null);
+      }
+
+      async function handleImportFile(event) {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = "";
+        if (!file) return;
+        try {
+          const parsed = await readJsonFile(file);
+          const list = Array.isArray(parsed) ? parsed : parsed && Array.isArray(parsed.items) ? parsed.items : null;
+          if (!list) throw new Error("That file has no tasks in it.");
+          const subjectsInFile = parsed && Array.isArray(parsed.subjects) ? parsed.subjects : [];
+          setPendingImport({ items: list.map(normaliseItem), subjects: subjectsInFile });
+          setFormError("");
+        } catch (err) {
+          setPendingImport(null);
+          setFormError(err.message || "That backup could not be read.");
+        }
+      }
+
+      const TABS = [
+        { key: "password", label: "My password", icon: KeyRound },
+        { key: "accounts", label: "Accounts", icon: Users },
+        { key: "subjects", label: "Subjects", icon: Tag },
+        { key: "data", label: "Data", icon: HardDrive },
+      ];
+
+      return (
+        <Modal
+          open={open}
+          onClose={onClose}
+          icon={Settings}
+          iconClass="bg-gradient-to-br from-slate-700 to-slate-900"
+          title="Admin settings"
+          subtitle="Manage who can sign in, edit your subjects, and back up the class board."
+        >
+          <div className="mt-6 grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+            {TABS.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => { setTab(key); setFormError(""); }}
+                aria-pressed={tab === key}
+                className={`flex min-h-[40px] items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                  tab === key
+                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-100"
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                }`}
+              >
+                <Icon size={14} />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "password" && (
+            <form onSubmit={savePassword} className="mt-6 grid gap-4 sm:grid-cols-2" noValidate>
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3.5 py-2.5 sm:col-span-2 dark:border-slate-700 dark:bg-slate-900/60">
+                <span className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  <ShieldCheck size={14} className="text-emerald-500" />
+                  Current password
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    {reveal ? account.password : "••••••••"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setReveal((r) => !r)}
+                    aria-label={reveal ? "Hide password" : "Show password"}
+                    className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                  >
+                    {reveal ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </span>
+              </div>
+
+              <Field id="current-password" label="Current password" error={pwErrors.current} className="sm:col-span-2">
+                <input
+                  id="current-password"
+                  type="password"
+                  value={pw.current}
+                  onChange={(e) => setPw((p) => ({ ...p, current: e.target.value }))}
+                  placeholder="The password you unlock with"
+                  autoComplete="current-password"
+                  aria-invalid={pwErrors.current ? "true" : undefined}
+                  aria-describedby={pwErrors.current ? "current-password-message" : undefined}
+                  className={pwErrors.current ? INPUT_ERR : INPUT}
+                />
+              </Field>
+
+              <Field id="new-password" label="New password" error={pwErrors.next} hint="At least 4 characters.">
+                <input
+                  id="new-password"
+                  type="text"
+                  value={pw.next}
+                  onChange={(e) => setPw((p) => ({ ...p, next: e.target.value }))}
+                  placeholder="Enter new password"
+                  autoComplete="new-password"
+                  aria-invalid={pwErrors.next ? "true" : undefined}
+                  aria-describedby="new-password-message"
+                  className={pwErrors.next ? INPUT_ERR : INPUT}
+                />
+              </Field>
+
+              <Field id="confirm-password" label="Confirm new password" error={pwErrors.confirm}>
+                <input
+                  id="confirm-password"
+                  type="text"
+                  value={pw.confirm}
+                  onChange={(e) => setPw((p) => ({ ...p, confirm: e.target.value }))}
+                  placeholder="Repeat new password"
+                  autoComplete="new-password"
+                  aria-invalid={pwErrors.confirm ? "true" : undefined}
+                  aria-describedby={pwErrors.confirm ? "confirm-password-message" : undefined}
+                  className={pwErrors.confirm ? INPUT_ERR : INPUT}
+                />
+              </Field>
+
+              {saved && (
+                <p role="status" className="flex animate-fade-in items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-xs font-semibold text-emerald-700 sm:col-span-2 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                  <Check size={14} strokeWidth={3} />
+                  Password updated. Use it the next time you unlock.
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 border-t border-slate-200/80 pt-4 sm:col-span-2 dark:border-slate-800">
+                <button type="submit" className={BTN_PRIMARY}>
+                  <KeyRound size={15} />
+                  Save password
+                </button>
+              </div>
+            </form>
+          )}
+
+          {tab === "accounts" && (
+            <AccountsPanel
+              accounts={config.accounts}
+              items={items}
+              classCode={config.classCode}
+              viewer={account}
+              onAddAccount={onAddAccount}
+              onRenameAccount={onRenameAccount}
+              onSetRole={onSetRole}
+              onSetAccountPassword={onSetAccountPassword}
+              onDeleteAccount={onDeleteAccount}
+              onClassCode={onClassCode}
+            />
+          )}
+
+          {tab === "subjects" && (
+            <div className="mt-6 space-y-4">
+              <form onSubmit={addSubject} className="flex gap-2" noValidate>
+                <input
+                  id="new-subject"
+                  type="text"
+                  value={newSubject}
+                  onChange={(e) => { setNewSubject(e.target.value); setFormError(""); }}
+                  placeholder="Add a subject, for example Supply Chain Management"
+                  aria-label="New subject name"
+                  className={formError && !editing ? INPUT_ERR : INPUT}
+                />
+                <button type="submit" className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
+                  <Plus size={15} />
+                  Add
+                </button>
+              </form>
+
+              {formError && (
+                <p role="alert" className="flex animate-fade-in items-center gap-2 text-xs font-medium text-rose-600 dark:text-rose-400">
+                  <CircleAlert size={12} />
+                  {formError}
+                </p>
+              )}
+
+              <ul className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                {subjects.map((name) => {
+                  const count = usageCount(name);
+                  const isEditing = editing === name;
+                  return (
+                    <li key={name} className="flex items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/60">
+                      {isEditing ? (
+                        <>
+                          <input
+                            autoFocus
+                            value={editValue}
+                            aria-label={"Rename " + name}
+                            onChange={(e) => { setEditValue(e.target.value); setFormError(""); }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { e.preventDefault(); commitEdit(); }
+                              if (e.key === "Escape") setEditing(null);
+                            }}
+                            className="min-w-0 flex-1 rounded-lg border border-emerald-400 bg-white px-2.5 py-1.5 text-sm text-slate-800 outline-none focus:ring-4 focus:ring-emerald-100 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-emerald-500/20"
+                          />
+                          <button type="button" onClick={commitEdit} title="Save name" className="rounded-lg bg-emerald-600 p-2 text-white transition hover:bg-emerald-700">
+                            <Check size={14} strokeWidth={3} />
+                          </button>
+                          <button type="button" onClick={() => { setEditing(null); setFormError(""); }} title="Cancel rename" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800">
+                            <X size={14} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${subjectDot(name)}`} aria-hidden="true" />
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700 dark:text-slate-200">{name}</span>
+                          <span className={`shrink-0 rounded-lg px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${count ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-slate-200/70 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}>
+                            {count ? count + (count === 1 ? " task" : " tasks") : "unused"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => { setEditing(name); setEditValue(name); setFormError(""); }}
+                            title="Rename subject"
+                            aria-label={"Rename " + name}
+                            className="shrink-0 rounded-lg p-2 text-slate-500 transition hover:bg-white hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { if (!count) onDeleteSubject(name); }}
+                            disabled={count > 0}
+                            title={count ? "Used by " + count + (count === 1 ? " task" : " tasks") + ", rename it instead" : "Delete subject"}
+                            aria-label={"Delete " + name}
+                            className={`shrink-0 rounded-lg p-2 transition ${count > 0 ? "text-slate-400 dark:text-slate-600" : "text-slate-500 hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:hover:bg-rose-500/15 dark:hover:text-rose-300"}`}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                Renaming a subject updates every task that uses it. A subject that is still in use cannot be deleted, so no
+                task loses its label.
+              </p>
+            </div>
+          )}
+
+          {tab === "data" && (
+            <div className="mt-6 space-y-4">
+              <div className="flex items-start gap-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                <HardDrive size={16} className="mt-0.5 shrink-0 text-slate-500 dark:text-slate-400" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">This browser is using {usage}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                    Pictures are compressed before they are saved, so roughly 15 to 25 of them fit inside the usual 5 MB
+                    browser limit. Export a backup before clearing browser data.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => downloadBackup(items, config)}
+                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <Download size={15} />
+                  Export backup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => importRef.current && importRef.current.click()}
+                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <Upload size={15} />
+                  Import backup
+                </button>
+              </div>
+
+              <input ref={importRef} type="file" accept="application/json,.json" className="hidden" onChange={handleImportFile} />
+
+              {formError && (
+                <p role="alert" className="flex animate-fade-in items-center gap-2 text-xs font-medium text-rose-600 dark:text-rose-400">
+                  <CircleAlert size={12} />
+                  {formError}
+                </p>
+              )}
+
+              {pendingImport && (
+                <div className="animate-fade-in rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                    Replace your tasks with {pendingImport.items.length} from this file?
+                  </p>
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                    Your current {items.length} tasks will be overwritten. Your unlock password stays as it is.
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onImport(pendingImport);
+                        setPendingImport(null);
+                        setUsage(storageUsageText());
+                      }}
+                      className="rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-amber-700"
+                    >
+                      Replace tasks
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPendingImport(null)}
+                      className="rounded-xl px-3.5 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-500/20"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                A backup is a plain JSON file holding your tasks, pictures, subjects and theme. Keep it private, it contains
+                everything on your board.
+              </p>
+            </div>
+          )}
+        </Modal>
+      );
+    }
+
+    /* ============================================================
+       Empty states
+       ============================================================ */
+
+    function EmptyState({ title, body, actionLabel, onAction, secondary }) {
+      return (
+        <div className="rounded-2xl border border-dashed border-slate-300/80 bg-white/70 px-6 py-14 text-center backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/50">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700">
+            <Inbox size={24} />
+          </div>
+          <h3 className="mt-4 font-display text-base font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
+          <p className="mx-auto mt-1.5 max-w-sm text-sm leading-relaxed text-slate-500 dark:text-slate-400">{body}</p>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={onAction}
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+            >
+              {actionLabel}
+            </button>
+            {secondary}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       Dashboard
+       ============================================================ */
+
+    function Dashboard({
+      items, subjects, config, theme, account,
+      onAdd, onUpdate, onCycleStatus, onDelete, onEnsureSubject,
+      onAddPictures, onRemovePicture,
+      notify, onSignOut, onSaveOwnPassword, onAddAccount, onRenameAccount, onSetRole,
+      onSetAccountPassword, onDeleteAccount, onClassCode,
+      onAddSubject, onRenameSubject, onDeleteSubject, onImport, onThemeChange,
+    }) {
+      const [query, setQuery] = useState("");
+      const [subject, setSubject] = useState("all");
+      const [status, setStatus] = useState("all");
+      const [dueFilter, setDueFilter] = useState("all");
+      const [modalOpen, setModalOpen] = useState(false);
+      const [accountOpen, setAccountOpen] = useState(false);
+      const [editing, setEditing] = useState(null);
+      const [settingsOpen, setSettingsOpen] = useState(false);
+      const [lightbox, setLightbox] = useState(null);
+      const fileRef = useRef(null);
+      const fileTarget = useRef(null);
+
+      const lightboxEntry = lightbox ? items.find((i) => i.id === lightbox.id) : null;
+      const lightboxSrcs = lightboxEntry
+        ? lightbox.kind === "solution" ? lightboxEntry.solutionImages : lightboxEntry.images
+        : [];
+
+      const stats = useMemo(() => {
+        const counts = { pending: 0, "in-progress": 0, completed: 0 };
+        items.forEach((item) => { if (counts[item.status] !== undefined) counts[item.status] += 1; });
+        return counts;
+      }, [items]);
+
+      const matchesSearchAndFacets = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        return items.filter((item) => {
+          if (subject !== "all" && item.subject !== subject) return false;
+          if (status !== "all" && item.status !== status) return false;
+          if (!q) return true;
+          return [item.title, item.subject, item.description, item.solution].join(" ").toLowerCase().includes(q);
+        });
+      }, [items, query, subject, status]);
+
+      const dueCounts = useMemo(() => {
+        const counts = { all: matchesSearchAndFacets.length, overdue: 0, today: 0, week: 0 };
+        matchesSearchAndFacets.forEach((item) => {
+          const bucket = dueBucket(item);
+          if (bucket === "overdue") counts.overdue += 1;
+          else if (bucket === "today") counts.today += 1;
+          else if (bucket === "week") counts.week += 1;
+        });
+        return counts;
+      }, [matchesSearchAndFacets]);
+
+      const filtered = useMemo(() => {
+        return matchesSearchAndFacets
+          .filter((item) => dueFilter === "all" || dueBucket(item) === dueFilter)
+          .sort((a, b) => {
+            const da = a.dueDate || "9999-12-31";
+            const db = b.dueDate || "9999-12-31";
+            if (da !== db) return da < db ? -1 : 1;
+            return (b.createdAt || 0) - (a.createdAt || 0);
+          });
+      }, [matchesSearchAndFacets, dueFilter]);
+
+      const filtersActive = query.trim() !== "" || subject !== "all" || status !== "all" || dueFilter !== "all";
+
+      function clearFilters() {
+        setQuery("");
+        setSubject("all");
+        setStatus("all");
+        setDueFilter("all");
+      }
+
+      function openCreate() {
+        setEditing(null);
+        setModalOpen(true);
+      }
+
+      function openEdit(item) {
+        setEditing(item);
+        setModalOpen(true);
+      }
+
+      function closeModal() {
+        setModalOpen(false);
+        setEditing(null);
+      }
+
+      function handleSubmit(payload) {
+        /* A subject nobody has used yet is added to the subject list on the fly. */
+        const subject = onEnsureSubject(payload.subject);
+        const next = { ...payload, subject };
+        const count = (next.images || []).length + (next.solutionImages || []).length;
+        if (editing) {
+          onUpdate(editing.id, next);
+          notify("Changes saved");
+        } else {
+          onAdd(next);
+          notify(count ? "Assignment added with " + count + (count === 1 ? " picture" : " pictures") : "Assignment added to your dashboard");
+        }
+        closeModal();
+      }
+
+      function requestPicture(id, kind) {
+        fileTarget.current = { id, kind };
+        if (fileRef.current) fileRef.current.click();
+      }
+
+      function pickImage(id) {
+        requestPicture(id, "card");
+      }
+
+      function pickSolutionImage(id) {
+        requestPicture(id, "solution");
+      }
+
+      async function handleImagePick(event) {
+        const picked = Array.from(event.target.files || []);
+        event.target.value = "";
+        const target = fileTarget.current;
+        fileTarget.current = null;
+        if (!picked.length || !target) return;
+
+        const item = items.find((i) => i.id === target.id);
+        if (!item) return;
+        const key = target.kind === "solution" ? "solutionImages" : "images";
+        const existing = item[key] || [];
+        const room = Math.max(0, MAX_PICTURES - existing.length);
+        if (!room) {
+          notify("That assignment already has " + MAX_PICTURES + " pictures", "danger");
+          return;
+        }
+
+        const files = picked.slice(0, room);
+        const budget = existing.length ? IMAGE_CHAR_BUDGET_FILL : IMAGE_CHAR_BUDGET;
+        const where = target.kind === "solution" ? "the answer" : "the card";
+        notify("Resizing " + files.length + " picture" + (files.length === 1 ? "" : "s") + " for " + where, "info");
+
+        const added = [];
+        for (const file of files) {
+          try {
+            added.push(await processImage(file, budget));
+          } catch (err) {
+            notify(err.message || "One picture could not be loaded", "danger");
+          }
+        }
+        if (!added.length) return;
+        onAddPictures(target.id, key, added);
+        const skipped = picked.length - added.length;
+        notify(
+          added.length + (added.length === 1 ? " picture added to " : " pictures added to ") + where +
+            (skipped > 0 ? ". " + skipped + " skipped, the limit is " + MAX_PICTURES : "")
+        );
+      }
+
+      return (
+        <div className="relative min-h-screen">
+          <AmbientBackdrop />
+
+          <div className="relative z-10">
+            <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/70 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/70">
+              <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-glow">
+                  <GraduationCap size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h1 className="truncate font-display text-base font-semibold tracking-tight text-slate-900 sm:text-lg dark:text-slate-50">
+                      BBA Section H Organizer
+                    </h1>
+                    <span className="hidden shrink-0 rounded-lg bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white sm:inline dark:bg-slate-100 dark:text-slate-900">
+                      Section H
+                    </span>
+                  </div>
+                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                    Fall 2026, {items.length} {items.length === 1 ? "assignment" : "assignments"} tracked
+                  </p>
+                </div>
+
+                <div className="ml-auto flex items-center gap-2">
+                  <button type="button" onClick={openCreate} className={BTN_PRIMARY + " px-3.5 py-2.5"}>
+                    <Plus size={16} />
+                    <span className="hidden sm:inline">New assignment</span>
+                  </button>
+                  <ThemeToggle theme={theme} onChange={onThemeChange} />
+                  {account && account.role === "admin" && (
+                    <button type="button" onClick={() => setSettingsOpen(true)} className={BTN_ICON} title="Admin settings" aria-label="Admin settings">
+                      <Settings size={16} />
+                    </button>
+                  )}
+                  {account && (
+                    <button
+                      type="button"
+                      onClick={() => setAccountOpen(true)}
+                      className="inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-xl bg-slate-100 px-2.5 py-2 text-left transition hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"
+                      title={"Signed in as " + account.username}
+                    >
+                      <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-[11px] font-bold text-white">
+                        {account.username.charAt(0).toUpperCase()}
+                      </span>
+                      <span className="hidden max-w-[7rem] truncate text-xs font-semibold text-slate-700 sm:inline dark:text-slate-200">
+                        {account.username}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </header>
+
+            <main className="mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 lg:px-8">
+              <section className="grid gap-3 sm:grid-cols-3 sm:gap-4">
+                {STATUS_ORDER.map((key) => (
+                  <StatCard key={key} label={STATUS_META[key].label} count={stats[key]} total={items.length} meta={STATUS_META[key]} />
+                ))}
+              </section>
+
+              <section className={`${CARD} mt-5 p-3 sm:p-4`}>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                  <div className="relative flex-1">
+                    <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+                    <input
+                      type="text"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Search title, subject, description or solution"
+                      aria-label="Search assignments"
+                      className={`${INPUT} py-2.5 pl-10 pr-10`}
+                    />
+                    {query && (
+                      <button
+                        type="button"
+                        onClick={() => setQuery("")}
+                        aria-label="Clear search"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 lg:w-auto">
+                    <SelectControl icon={BookOpen} value={subject} onChange={setSubject} ariaLabel="Filter by subject">
+                      <option value="all">All subjects</option>
+                      {subjects.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </SelectControl>
+
+                    <SelectControl icon={Filter} value={status} onChange={setStatus} ariaLabel="Filter by status">
+                      <option value="all">All statuses</option>
+                      {STATUS_ORDER.map((key) => (
+                        <option key={key} value={key}>{STATUS_META[key].label}</option>
+                      ))}
+                    </SelectControl>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200/70 pt-3 dark:border-slate-800">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Due</span>
+                  {DUE_FILTERS.map(({ key, label }) => {
+                    const active = dueFilter === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setDueFilter(key)}
+                        aria-pressed={active}
+                        className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold ring-1 ring-inset transition ${
+                          active
+                            ? "bg-slate-900 text-white ring-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:ring-slate-100"
+                            : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-800"
+                        }`}
+                      >
+                        {label}
+                        <span className={`tabular-nums ${active ? "text-white/70 dark:text-slate-900/60" : "text-slate-500 dark:text-slate-400"}`}>
+                          {dueCounts[key]}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  <span className="font-semibold text-slate-800 tabular-nums dark:text-slate-100">{filtered.length}</span> of {items.length}{" "}
+                  {items.length === 1 ? "assignment" : "assignments"}
+                  {status !== "all" && " in " + STATUS_META[status].label}
+                  {dueFilter !== "all" && " due " + DUE_FILTERS.find((f) => f.key === dueFilter).label.toLowerCase()}
+                </p>
+                <div className="flex items-center gap-3">
+                  {filtersActive && (
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="text-xs font-semibold text-slate-500 underline-offset-2 transition hover:text-emerald-700 hover:underline dark:text-slate-400 dark:hover:text-emerald-300"
+                    >
+                      Clear filters
+                    </button>
+                  )}
+                  <p className="hidden text-xs text-slate-500 sm:block dark:text-slate-400">Sorted by due date</p>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                {filtered.length > 0 ? (
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {filtered.map((item) => (
+                      <AssignmentCard
+                        key={item.id}
+                        item={item}
+                        account={account}
+                        onCycleStatus={onCycleStatus}
+                        onEdit={openEdit}
+                        onDelete={onDelete}
+                        onViewImage={(target, index) => setLightbox({ id: target.id, kind: "card", index: index || 0 })}
+                        onPickImage={pickImage}
+                        onRemoveImage={(id, index) => onRemovePicture(id, "images", index)}
+                        onViewSolutionImage={(target, index) => setLightbox({ id: target.id, kind: "solution", index: index || 0 })}
+                        onPickSolutionImage={pickSolutionImage}
+                        onRemoveSolutionImage={(id, index) => onRemovePicture(id, "solutionImages", index)}
+                      />
+                    ))}
+                  </div>
+                ) : items.length === 0 ? (
+                  <EmptyState
+                    title="No assignments yet"
+                    body="Add the first task for Section H and it appears here straight away."
+                    actionLabel="Add first assignment"
+                    onAction={openCreate}
+                  />
+                ) : (
+                  <EmptyState
+                    title="Nothing matches these filters"
+                    body="Try a different keyword, subject, status or due window. Clearing the filters brings everything back."
+                    actionLabel="Clear filters"
+                    onAction={clearFilters}
+                    secondary={
+                      <button type="button" onClick={openCreate} className={BTN_GHOST}>
+                        <Plus size={15} />
+                        New assignment
+                      </button>
+                    }
+                  />
+                )}
+              </div>
+
+              <footer className="mt-12 flex flex-col items-center justify-between gap-3 border-t border-slate-200/80 pt-6 text-xs text-slate-500 sm:flex-row dark:border-slate-800 dark:text-slate-400">
+                <p className="inline-flex items-center gap-2">
+                  <Layers size={13} />
+                  BBA Section H Organizer, Fall 2026
+                </p>
+                <p className="inline-flex items-center gap-2">
+                  <Lock size={12} />
+                  Locks on reload, data stays in this browser
+                </p>
+              </footer>
+            </main>
+          </div>
+
+          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImagePick} />
+
+          <TaskModal
+            open={modalOpen}
+            onClose={closeModal}
+            onSubmit={handleSubmit}
+            subjects={subjects}
+            initial={editing}
+          />
+
+          <SettingsModal
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            config={config}
+            account={account}
+            items={items}
+            subjects={subjects}
+            onSaveOwnPassword={onSaveOwnPassword}
+            onAddAccount={onAddAccount}
+            onRenameAccount={onRenameAccount}
+            onSetRole={onSetRole}
+            onSetAccountPassword={onSetAccountPassword}
+            onDeleteAccount={onDeleteAccount}
+            onClassCode={onClassCode}
+            onAddSubject={onAddSubject}
+            onRenameSubject={onRenameSubject}
+            onDeleteSubject={onDeleteSubject}
+            onImport={onImport}
+          />
+
+          <AccountModal
+            open={accountOpen}
+            onClose={() => setAccountOpen(false)}
+            account={account}
+            onChangePassword={(next) => {
+              const ok = onSaveOwnPassword(next);
+              if (ok) notify("Password updated");
+              return ok;
+            }}
+            onSignOut={() => {
+              setAccountOpen(false);
+              onSignOut();
+            }}
+          />
+
+          {lightboxEntry && lightboxSrcs.length > 0 && (
+            <Lightbox
+              srcs={lightboxSrcs}
+              index={lightbox.index || 0}
+              onIndex={(index) => setLightbox((l) => ({ ...l, index }))}
+              caption={lightboxEntry.title}
+              onClose={() => setLightbox(null)}
+              onRemove={(index) =>
+                onRemovePicture(
+                  lightboxEntry.id,
+                  lightbox.kind === "solution" ? "solutionImages" : "images",
+                  index
+                )
+              }
+            />
+          )}
+        </div>
+      );
+    }
+
+    /* ============================================================
+       Toast
+       ============================================================ */
+
+    const TONES = {
+      success: { wrap: "border-emerald-200/80 dark:border-emerald-500/30", tile: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300", Icon: Check },
+      danger: { wrap: "border-rose-200/80 dark:border-rose-500/30", tile: "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300", Icon: CircleAlert },
+      info: { wrap: "border-sky-200/80 dark:border-sky-500/30", tile: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300", Icon: Sparkles },
+    };
+
+    function Toast({ toast }) {
+      if (!toast) return null;
+      const tone = TONES[toast.tone] || TONES.success;
+      const Icon = tone.Icon;
+      return (
+        <div
+          className="pointer-events-none fixed bottom-5 right-5 z-[60] animate-toast-in"
+          role={toast.tone === "danger" ? "alert" : "status"}
+          aria-live={toast.tone === "danger" ? "assertive" : "polite"}
+        >
+          <div className={`flex items-center gap-2.5 rounded-2xl border bg-white/95 px-4 py-3 text-sm font-medium text-slate-700 shadow-lift backdrop-blur-xl dark:bg-slate-900/95 dark:text-slate-200 ${tone.wrap}`}>
+            <span className={`flex h-6 w-6 items-center justify-center rounded-full ${tone.tile}`}>
+              <Icon size={13} strokeWidth={3} />
+            </span>
+            {toast.text}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       App
+       ============================================================ */
+
+    function App() {
+      const [account, setAccount] = useState(null);
+      const [gate, setGate] = useState(readGate);
+      const remoteOn = useRef(false);
+      const lastRemoteItems = useRef("");
+      const lastRemoteAccounts = useRef("");
+      const [items, setItems] = useState(loadItems);
+      const [config, setConfig] = useState(loadConfig);
+      const [toast, setToast] = useState(null);
+      const [systemDark, setSystemDark] = useState(
+        () => window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+      );
+      const saveFailed = useRef(false);
+
+      const theme = config.theme || "system";
+      const dark = theme === "dark" || (theme === "system" && systemDark);
+
+      /* Keep the document in step with the chosen theme. One theme at a time. */
+      useEffect(() => {
+        const root = document.documentElement;
+        root.classList.toggle("dark", dark);
+        root.style.colorScheme = dark ? "dark" : "light";
+      }, [dark]);
+
+      useEffect(() => {
+        if (!window.matchMedia) return;
+        const media = window.matchMedia("(prefers-color-scheme: dark)");
+        const onChange = (event) => setSystemDark(event.matches);
+        if (media.addEventListener) media.addEventListener("change", onChange);
+        else if (media.addListener) media.addListener(onChange);
+        return () => {
+          if (media.removeEventListener) media.removeEventListener("change", onChange);
+          else if (media.removeListener) media.removeListener(onChange);
+        };
+      }, []);
+
+      /* The admin gate is a URL rather than a menu item, so students never meet it. */
+      useEffect(() => {
+        const onHash = () => setGate(readGate());
+        window.addEventListener("hashchange", onHash);
+        return () => window.removeEventListener("hashchange", onHash);
+      }, []);
+
+      /* Join the shared board on first load, then stay on it. Both no-ops when the
+         page is not served from the quiz app. */
+      useEffect(() => {
+        let alive = true;
+        (async () => {
+          const state = await remotePull();
+          if (!alive || !state) return;
+          remoteOn.current = true;
+          const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
+          lastRemoteItems.current = itemsFingerprint(remoteItems);
+          if (lastRemoteItems.current !== itemsFingerprint(items)) setItems(remoteItems);
+          const remoteAccounts = Array.isArray(state.accounts)
+            ? state.accounts.map(normaliseAccount).filter(Boolean)
+            : [];
+          if (remoteAccounts.length) {
+            lastRemoteAccounts.current = accountsFingerprint(remoteAccounts);
+            setConfig((current) =>
+              normaliseConfig({
+                subjects: (state.config && state.config.subjects) || current.subjects,
+                theme: current.theme,
+                classCode: (state.config && state.config.classCode) || current.classCode,
+                accounts: remoteAccounts,
+              })
+            );
+          }
+        })();
+        return () => {
+          alive = false;
+        };
+        /* Mount only: later changes travel through the poll and the save effect. */
+        /* eslint-disable-next-line */
+      }, []);
+
+      useEffect(() => {
+        const timer = setInterval(async () => {
+          if (!remoteOn.current) return;
+          const state = await remotePull();
+          if (!state) return;
+          const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
+          const fp = itemsFingerprint(remoteItems);
+          if (fp !== itemsFingerprint(items)) {
+            lastRemoteItems.current = fp;
+            setItems(remoteItems);
+          }
+          const remoteAccounts = Array.isArray(state.accounts)
+            ? state.accounts.map(normaliseAccount).filter(Boolean)
+            : [];
+          if (remoteAccounts.length) {
+            const afp = accountsFingerprint(remoteAccounts);
+            setConfig((current) => {
+              if (accountsFingerprint(current.accounts) === afp) return current;
+              lastRemoteAccounts.current = afp;
+              return normaliseConfig({ ...current, accounts: remoteAccounts });
+            });
+          }
+        }, 12000);
+        return () => clearInterval(timer);
+      }, [items]);
+
+      /* One session key for both sites. The college quiz app writes the same key on
+         the same origin, so signing in there lands here already signed in. */
+      useEffect(() => {
+        const session = loadSession();
+        if (!session) return;
+        const found = config.accounts.find((a) => a.id === session.id);
+        if (found) setAccount(found);
+        else clearSession();
+      }, [config.accounts]);
+
+      /* Another tab on this origin, or the college quiz site, can add an account,
+         reset a password or sign out. Without this the sign in form keeps working
+         from a stale list and rejects a login that is actually right. */
+      useEffect(() => {
+        const onStorage = (event) => {
+          const key = event.key;
+          if (!key || key === STORAGE_KEY) refreshBoard();
+          if (!key || key === CONFIG_KEY || key === SESSION_KEY) syncAccounts();
+        };
+        window.addEventListener("storage", onStorage);
+        return () => window.removeEventListener("storage", onStorage);
+      }, []);
+
+      function openAdminGate() {
+        window.location.hash = ADMIN_HASH;
+        setGate("admin");
+      }
+
+      function openClassGate() {
+        if (window.location.hash) window.location.hash = "";
+        setGate("class");
+      }
+
+      useEffect(() => {
+        const ok = saveItems(items);
+        /* Only a change made here is worth uploading. Anything that arrived from
+           /api already matches what the server has, so it is skipped. */
+        if (ok && remoteOn.current && itemsFingerprint(items) !== lastRemoteItems.current) {
+          remotePush("saveBoard", items);
+        }
+        if (!ok && !saveFailed.current) {
+          saveFailed.current = true;
+          notify("Browser storage is full. Remove a picture from an assignment, then try again.", "danger");
+        }
+        if (ok) saveFailed.current = false;
+      }, [items]);
+
+      useEffect(() => {
+        if (!toast) return;
+        const t = setTimeout(() => setToast(null), 2800);
+        return () => clearTimeout(t);
+      }, [toast]);
+
+      const notify = (text, tone = "success") => setToast({ id: Date.now(), text, tone });
+
+      const subjects = useMemo(() => {
+        const list = [...config.subjects];
+        items.forEach((item) => {
+          if (item.subject && !list.includes(item.subject)) list.push(item.subject);
+        });
+        return list.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+      }, [config.subjects, items]);
+
+      /* Anything saved before accounts existed belongs to the admin, so no card
+         ever loses its name when the class starts signing in. */
+      useEffect(() => {
+        if (!config.accounts.length) return;
+        const fallback = config.accounts.find((a) => a.role === "admin") || config.accounts[0];
+        if (!items.some((item) => !item.ownerId)) return;
+        setItems((prev) =>
+          prev.map((item) => (item.ownerId ? item : { ...item, ownerId: fallback.id, ownerName: fallback.username }))
+        );
+      }, [config.accounts, items]);
+
+      function commitAccounts(nextAccounts, extra) {
+        const next = { ...config, accounts: nextAccounts, ...(extra || {}) };
+        if (!commitConfig(next)) return false;
+        setConfig(next);
+        if (remoteOn.current && accountsFingerprint(nextAccounts) !== lastRemoteAccounts.current) {
+          remotePush("saveAccounts", nextAccounts);
+        }
+        /* Keep the signed in copy in step, so a password change takes effect at once. */
+        setAccount((current) => {
+          if (!current) return current;
+          const found = nextAccounts.find((a) => a.id === current.id);
+          return found || current;
+        });
+        return true;
+      }
+
+      function signIn(username, password, options) {
+        const adminOnly = Boolean(options && options.adminOnly);
+        const found = config.accounts.find((a) => a.username.toLowerCase() === username.toLowerCase());
+        if (!found) {
+          if (!config.accounts.length) {
+            return { ok: false, reason: "This device has no class logins yet. Create one with the class code." };
+          }
+          return { ok: false, reason: "No login called " + username + " is saved on this device." };
+        }
+        if (found.password !== password) {
+          return {
+            ok: false,
+            reason: adminOnly
+              ? "That admin login is not correct."
+              : "That password is not right for " + found.username + ".",
+          };
+        }
+        if (adminOnly && found.role !== "admin") {
+          return { ok: false, reason: "That is a student login. Use the class sign in instead." };
+        }
+        if (!adminOnly && found.role === "admin") {
+          return { ok: false, reason: "Admin accounts unlock from the admin gate.", action: "admin-gate" };
+        }
+        commitAccounts(
+          config.accounts.map((a) => (a.id === found.id ? { ...a, lastSeen: Date.now() } : a))
+        );
+        setAccount(found);
+        saveSession(found);
+        return { ok: true };
+      }
+
+      function register(username, password, code) {
+        if (code.trim().toLowerCase() !== config.classCode.trim().toLowerCase()) {
+          return { ok: false, reason: "That class code is not right." };
+        }
+        if (config.accounts.some((a) => a.username.toLowerCase() === username.toLowerCase())) {
+          return { ok: false, reason: "That username is already taken. Try signing in." };
+        }
+        const fresh = {
+          id: uid(),
+          username,
+          password,
+          role: "student",
+          createdAt: Date.now(),
+          lastSeen: Date.now(),
+        };
+        if (!commitAccounts([...config.accounts, fresh])) {
+          return { ok: false, reason: "Could not save. Browser storage is unavailable." };
+        }
+        setAccount(fresh);
+        saveSession(fresh);
+        return { ok: true };
+      }
+
+      function signOut() {
+        setAccount(null);
+        clearSession();
+        notify("Signed out", "info");
+      }
+
+      function saveOwnPassword(next) {
+        if (!account) return false;
+        return commitAccounts(config.accounts.map((a) => (a.id === account.id ? { ...a, password: next } : a)));
+      }
+
+      function addAccount({ username, password, role }) {
+        return commitAccounts([...config.accounts, { id: uid(), username, password, role, createdAt: Date.now(), lastSeen: 0 }]);
+      }
+
+      function renameAccount(id, username) {
+        const ok = commitAccounts(config.accounts.map((a) => (a.id === id ? { ...a, username } : a)));
+        if (ok) {
+          setItems((prev) => prev.map((item) => (item.ownerId === id ? { ...item, ownerName: username } : item)));
+        }
+        return ok;
+      }
+
+      function setAccountRole(id, role) {
+        return commitAccounts(config.accounts.map((a) => (a.id === id ? { ...a, role } : a)));
+      }
+
+      function setAccountPassword(id, password) {
+        return commitAccounts(config.accounts.map((a) => (a.id === id ? { ...a, password } : a)));
+      }
+
+      function deleteAccount(id) {
+        if (items.some((item) => item.ownerId === id)) {
+          notify("That person still has assignments on the board", "danger");
+          return false;
+        }
+        if (config.accounts.filter((a) => a.role === "admin").length === 1 && config.accounts.find((a) => a.id === id)?.role === "admin") {
+          notify("The class needs at least one admin", "danger");
+          return false;
+        }
+        return commitAccounts(config.accounts.filter((a) => a.id !== id));
+      }
+
+      function setClassCode(code) {
+        const ok = commitConfig({ ...config, classCode: code });
+        if (ok) notify("New class code: " + code, "info");
+        return ok;
+      }
+
+      function addItem(payload) {
+        setItems((prev) => [
+          {
+            id: uid(),
+            createdAt: Date.now(),
+            ownerId: account ? account.id : "",
+            ownerName: account ? account.username : "",
+            ...payload,
+          },
+          ...prev,
+        ]);
+      }
+
+      function updateItem(id, payload) {
+        setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...payload, updatedAt: Date.now() } : item)));
+      }
+
+      function cycleStatus(id) {
+        const target = items.find((i) => i.id === id);
+        if (!target) return;
+        const next = NEXT_STATUS[target.status] || "pending";
+        setItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: next } : item)));
+        notify("Marked " + target.title + " as " + STATUS_META[next].label, next === "completed" ? "success" : "info");
+      }
+
+      function removeItem(id) {
+        const target = items.find((i) => i.id === id);
+        setItems((prev) => prev.filter((item) => item.id !== id));
+        if (target) notify("Deleted " + target.title, "danger");
+      }
+
+      function addPictures(id, key, urls) {
+        setItems((prev) => prev.map((item) => (item.id === id ? { ...item, [key]: [...(item[key] || []), ...urls] } : item)));
+      }
+
+      function removePicture(id, key, index) {
+        let removed = 0;
+        setItems((prev) =>
+          prev.map((item) => {
+            if (item.id !== id) return item;
+            const list = item[key] || [];
+            removed = Math.max(removed, list.length);
+            return { ...item, [key]: list.filter((_, i) => i !== index) };
+          })
+        );
+        notify((removed > 1 ? "Picture removed, " + (removed - 1) + " left" : "Picture removed"), "info");
+      }
+
+      /* An admin posting an assignment in one tab should reach every other tab on this
+         device straight away. The fingerprint keeps the save effect from bouncing the
+         same board back and forth between tabs. */
+      function refreshBoard() {
+        const fresh = loadItems();
+        setItems((prev) => (itemsFingerprint(prev) === itemsFingerprint(fresh) ? prev : fresh));
+      }
+
+      function syncAccounts() {
+        const fresh = loadConfig();
+        setConfig(fresh);
+        const session = loadSession();
+        if (!session) {
+          setAccount(null);
+          return;
+        }
+        const found = fresh.accounts.find((a) => a.id === session.id);
+        if (found) setAccount(found);
+        else clearSession();
+      }
+
+      function commitConfig(next) {
+        if (!saveConfig(next)) return false;
+        setConfig(next);
+        if (remoteOn.current) {
+          remotePush("saveConfig", { classCode: next.classCode, subjects: next.subjects });
+        }
+        return true;
+      }
+
+      function addSubject(name) {
+        const ok = commitConfig({ ...config, subjects: [...config.subjects, name] });
+        if (ok) notify("Subject " + name + " added", "info");
+        return ok;
+      }
+
+      /* Used by the add and edit forms: reuses an existing subject when only the
+         capitalisation differs, and saves genuinely new names to the list. */
+      function ensureSubject(name) {
+        const clean = String(name || "").replace(/\s+/g, " ").trim().slice(0, 60);
+        if (!clean) return "";
+        const known = [...config.subjects, ...items.map((item) => item.subject)];
+        const match = known.find((s) => s && s.toLowerCase() === clean.toLowerCase());
+        if (match) return match;
+        if (!config.subjects.includes(clean)) {
+          commitConfig({ ...config, subjects: [...config.subjects, clean] });
+        }
+        return clean;
+      }
+
+      function renameSubject(oldName, newName) {
+        const ok = commitConfig({ ...config, subjects: config.subjects.map((s) => (s === oldName ? newName : s)) });
+        if (!ok) return false;
+        setItems((prev) => prev.map((item) => (item.subject === oldName ? { ...item, subject: newName } : item)));
+        notify("Renamed to " + newName, "info");
+        return true;
+      }
+
+      function deleteSubject(name) {
+        const ok = commitConfig({ ...config, subjects: config.subjects.filter((s) => s !== name) });
+        if (ok) notify("Subject " + name + " deleted", "danger");
+        return ok;
+      }
+
+      function changeTheme(next) {
+        commitConfig({ ...config, theme: next });
+      }
+
+      function importBackup(payload) {
+        const nextSubjects = payload.subjects && payload.subjects.length ? payload.subjects : config.subjects;
+        setItems(payload.items);
+        commitConfig({ ...config, subjects: nextSubjects });
+        notify("Imported " + payload.items.length + (payload.items.length === 1 ? " assignment" : " assignments"));
+      }
+
+      return (
+        <>
+          {account ? (
+            <Dashboard
+              items={items}
+              subjects={subjects}
+              config={config}
+              theme={theme}
+              account={account}
+              onAdd={addItem}
+              onEnsureSubject={ensureSubject}
+              onUpdate={updateItem}
+              onCycleStatus={cycleStatus}
+              onDelete={removeItem}
+              onAddPictures={addPictures}
+              onRemovePicture={removePicture}
+              notify={notify}
+              onSignOut={signOut}
+              onSaveOwnPassword={saveOwnPassword}
+              onAddAccount={addAccount}
+              onRenameAccount={renameAccount}
+              onSetRole={setAccountRole}
+              onSetAccountPassword={setAccountPassword}
+              onDeleteAccount={deleteAccount}
+              onClassCode={setClassCode}
+              onAddSubject={addSubject}
+              onRenameSubject={renameSubject}
+              onDeleteSubject={deleteSubject}
+              onImport={importBackup}
+              onThemeChange={changeTheme}
+            />
+          ) : gate === "admin" ? (
+            <AdminSignIn onSignIn={signIn} onLeave={openClassGate} />
+          ) : (
+            <SignInScreen onSignIn={signIn} onRegister={register} onOpenAdminGate={openAdminGate} />
+          )}
+          <Toast toast={toast} />
+
+          {/* When this page is served from the college quiz app it gets a way back. */}
+          {window.location.pathname.split("/").pop() !== "index.html" && (
+            <a
+              href="./index.html"
+              className="fixed bottom-4 left-4 z-[55] inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-semibold text-slate-600 shadow-lift ring-1 ring-slate-200 backdrop-blur transition hover:text-emerald-700 dark:bg-slate-900/90 dark:text-slate-300 dark:ring-slate-700"
+            >
+              <ArrowRight size={13} className="rotate-180" />
+              College Quiz
+            </a>
+          )}
+        </>
+      );
+    }
+
+    createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

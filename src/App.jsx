@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Shield, User, Users, Lock, LogIn, ChevronLeft, Save } from 'lucide-react';
+import OrganizerLink from './OrganizerLink.jsx';
+import AccountChip from './AccountChip.jsx';
+import { ADMIN_HASH, organizerUrl, signInAdmin } from './auth.js';
+import DiscordPanel from './DiscordPanel.jsx';
+import { defaultDiscord, sendDiscord } from './discord.js';
 
 const initialConfig = {
   boy: {
@@ -37,8 +42,9 @@ export default function App() {
     return saved ? JSON.parse(saved) : initialConfig;
   });
 
+  const [adminUsernameInput, setAdminUsernameInput] = useState('');
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
-  const [adminPassword] = useState('admin');
+  const [adminError, setAdminError] = useState('');
   const [editConfig, setEditConfig] = useState(config);
   const [activeAdminTab, setActiveAdminTab] = useState('boy');
   const [toast, setToast] = useState('');
@@ -74,11 +80,14 @@ export default function App() {
 
   const handleAdminLogin = (e) => {
     e.preventDefault();
-    if (adminPasswordInput === adminPassword) {
+    setAdminError('');
+    const result = signInAdmin(adminUsernameInput, adminPasswordInput);
+    if (result.ok) {
       setAppState('admin');
+      setAdminUsernameInput('');
       setAdminPasswordInput('');
     } else {
-      showToast('Incorrect password!');
+      setAdminError(result.reason);
     }
   };
 
@@ -125,6 +134,9 @@ export default function App() {
           <Settings size={24} />
         </button>
 
+        <OrganizerLink />
+        <AccountChip />
+
         <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
           <h1 className="text-3xl font-bold text-gray-800 mb-6">Hey there! 👋</h1>
           <p className="text-gray-600 mb-6">Before we begin, what's your name?</p>
@@ -154,6 +166,8 @@ export default function App() {
   if (appState === 'gender') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
+        <OrganizerLink />
+        <AccountChip />
         <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
           <h2 className="text-2xl font-bold text-gray-800 mb-6">Welcome, {visitorName}!</h2>
           <p className="text-gray-600 mb-8">Choose your vibe:</p>
@@ -197,14 +211,29 @@ export default function App() {
           </div>
           <h2 className="text-2xl font-bold text-white text-center mb-6">Admin Access</h2>
           
+          <p className="mb-6 text-center text-sm text-gray-400">
+            Same admin login as the assignment organizer.
+          </p>
           <form onSubmit={handleAdminLogin} className="space-y-4">
+            <div className="relative">
+              <User className="absolute left-3 top-3 text-gray-400" size={20} />
+              <input
+                type="text"
+                value={adminUsernameInput}
+                onChange={(e) => setAdminUsernameInput(e.target.value)}
+                placeholder="Admin username"
+                autoComplete="username"
+                className="w-full pl-10 pr-4 py-3 bg-gray-700 text-white rounded-xl border border-gray-600 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
             <div className="relative">
               <Lock className="absolute left-3 top-3 text-gray-400" size={20} />
               <input
                 type="password"
                 value={adminPasswordInput}
                 onChange={(e) => setAdminPasswordInput(e.target.value)}
-                placeholder="Enter password..."
+                placeholder="Admin password"
+                autoComplete="current-password"
                 className="w-full pl-10 pr-4 py-3 bg-gray-700 text-white rounded-xl border border-gray-600 focus:border-blue-500 focus:outline-none"
               />
             </div>
@@ -215,7 +244,15 @@ export default function App() {
               <LogIn size={20} /> Login
             </button>
           </form>
-          {toast && <p className="text-red-400 text-center mt-4">{toast}</p>}
+          {adminError && <p className="mt-4 text-center text-red-400">{adminError}</p>}
+          <a
+            href={organizerUrl(ADMIN_HASH)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 flex items-center justify-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-gray-300"
+          >
+            <Shield size={12} /> Organizer admin gate
+          </a>
         </div>
       </div>
     );
@@ -362,6 +399,8 @@ export default function App() {
   // Render Quiz & Success states
   return (
     <div style={themeStyle}>
+      <OrganizerLink />
+      <AccountChip />
       <div className="max-w-xl w-full mx-auto text-center">
         {appState === 'success' ? (
           <div className="animate-in zoom-in duration-500">
