@@ -99,6 +99,10 @@ Subject options are the union of configured subjects and any subject already use
 
 The signed in person is kept in `bba-section-h-organizer.session.v1` under the same origin as the config, holding an account id and a timestamp, never a password. That is what makes a reload keep you signed in, and what the college quiz site reads and writes, so one login covers both sites.
 
+Every tab on the same origin listens for `storage` changes, so the board and the account list stay live: an assignment the admin posts appears in a student's open tab straight away, and an account created in one tab can be used to sign in from another without a reload. A fingerprint of each item (id, timestamps, status, title, picture counts) stops the save effect from bouncing the same board back and forth between tabs.
+
+A rejected login says which half was wrong: "No login called X is saved on this device." when the username is unknown, "That password is not right for X." when it exists. The sign in card also prints the address the logins are saved on, which is the quickest way to spot being on the wrong origin.
+
 Pictures moved from single `image` / `solutionImage` strings to arrays. `normaliseItem` accepts both shapes and `loadItems` runs it on every load, so existing saves and old backup files keep working without a manual migration step.
 
 ## 6. Skill-driven changes applied
@@ -164,12 +168,37 @@ Driven end to end and confirmed by DOM assertions plus screenshots:
 41. The quiz site shares the keys: 16 logic checks over `auth.js` passed (student sign in writes a session with no password in it, wrong password refused, admin account refused from the student chip, admin gate accepts the admin and refuses students, sign out clears the key, a corrupt or missing config degrades to an explanation instead of throwing, the storage watcher ignores unrelated keys).
 42. Compile check: all six quiz sources (`App.jsx`, `auth.js`, `AccountChip.jsx`, `DiscordPanel.jsx`, `OrganizerLink.jsx`, `discord.js`) pass Babel with the React preset.
 
+**Stale account list bug (reproduced, fixed, re-verified):**
+
+43. Reproduced the report exactly. Two tabs on one origin: tab B signed up `krish` with `9999`, and tab A, which had loaded before that, refused the same correct login with "That username and password do not match." while `krish` was plainly on disk. Cause: the sign in form searched an in-memory account list that was never refreshed when another tab or the quiz site changed the config.
+44. Fix verified the same way round: tab B signed up `meera`, and tab A signed in as `meera` without a reload. Tab A also picked up a sign in from tab B by itself.
+45. Messages now separate the cases: "No login called krishna is saved on this device." for an unknown username and "That password is not right for meera." for a wrong one. The card footer prints the address the logins live on.
+46. Live board: an admin posted "Live sync check" in tab B and a tab that was never reloaded went from "8 of 8" to "9 of 9" and rendered the new card. The fingerprint guard kept the tabs from writing to each other in a loop.
+
+**Student visibility of admin work (measured, already correct, now live):**
+
+47. Signed in as the student `meera`: the board showed "9 of 9" including the assignment the admin had just posted, owner line "admin", six "View solution" buttons open, zero Edit or Delete buttons on other people's cards, and no settings gear. Students already saw everything the admin posts; what was missing was live refresh.
+
+**Shared board sync (verified against a stubbed API, since no live backend exists here):**
+
+48. A copy of the organizer was run with `fetch` stubbed to serve a fake `/api/state` holding two assignments and two logins. On load the board adopted the server copy: "2 of 2", both remote cards rendered, and the eight local sample assignments were dropped.
+49. Signing in with a login that existed only on the server worked, so the account list is genuinely shared.
+50. Adding an assignment on that device pushed exactly one `saveBoard` action carrying all three items.
+51. Deleting an assignment on the server dropped the open tab from "3 of 3" to "2 of 2" within one poll, with no reload. That is the delete-everywhere behaviour.
+52. A first attempt at the upload guard used a boolean flag that stayed set after a poll with no local change, which silently swallowed later uploads. It was replaced with fingerprint comparison and re-verified: exactly one push per real local change and none for echoed state.
+53. Offline fallback: the plain file with no `/api` rendered normally, kept its eight local assignments, refused an admin login on the student screen with the admin gate hand off, and logged only the expected 404 for `./api/state`.
+54. Compile check: all nine sources (`src/App.jsx`, `auth.js`, `AccountChip.jsx`, `DiscordPanel.jsx`, `OrganizerLink.jsx`, `discord.js`, `api/_db.js`, `api/state.js`, `api/action.js`) pass Babel with the React preset.
+
+55. A harness that compiled the real `src/App.jsx` and mounted it against React 18 confirmed the app itself renders and the screen machine works. That check was run against a redesign of the quiz site which was later reverted on request, so it is recorded here as evidence about the component, not about the current quiz look.
+
 ## 8. Remaining risks and honest limits
 
 1. **Every password sits in localStorage in plain text.** That includes each person's. It keeps classmates out of casual view, not out of devtools.
 2. **Accounts are per browser, and per origin.** There is no server, so the account list, the class code and the board live only in the device they were created on. A student who signs up on a phone and a laptop is two different sets of data, and classmates cannot see work submitted on another machine. Real shared access needs a backend.
 3. **Two origins means two account sets.** The shared sign on works because the quiz site and `public/assignments.html` are served from the same origin. The standalone `index.html` opened from a different origin, a different port, or straight off disk is a separate set of data with its own `admin` / `admin` account. Sign in once on the origin you actually use and change that password.
 4. **A session is a key in localStorage.** Anyone with devtools can point the session key at the admin account id and the organizer will open unlocked. It is a convenience, not a lock.
+5. **One identity per origin, shared by every tab.** Because both sites read the same single session key, signing in as a student in one tab signs you out of the admin in another. On a shared classroom machine the whole class shares one login. With the shared board switched on the board itself is genuinely shared across devices, but the session stays per browser.
+6. **The sync code is unproven against a real backend.** It was exercised against a stubbed API that matches the endpoint contract, not against Supabase or a Vercel deployment. The first live run should be treated as a test.
 5. **localStorage is roughly 5 MB.** A single picture lands around 250 to 380 KB depending on detail, and the first picture in a set gets a larger budget than the rest. A picture heavy board (five or six photos on a few assignments) can fill the store; overflow surfaces a danger toast telling you to remove a picture, but older pictures are not evicted automatically. The Data tab shows current usage.
 6. **Import replaces everything.** It confirms first and keeps the current password, but there is no undo.
 7. **In-browser Babel.** Fine for daily use, not a production build. Moving to Vite needs Node, which this machine lacks.
@@ -181,26 +210,53 @@ Driven end to end and confirmed by DOM assertions plus screenshots:
 |---|---|
 | 125 to 215 | Domain constants: class code default, keys, default subjects, dot colours, status meta, theme meta, role meta, due filters, required field order, picture cap |
 | 217 to 330 | Sample assignments |
-| 332 to 476 | Storage helpers and the session layer (account and config normalising, load, save and clear the session, gate detection, admin gate URL) |
-| 478 to 707 | File helpers: usage text, dates, due buckets, image resize pipeline, backup download, JSON read, item normalising with legacy picture shapes |
-| 709 to 840 | Shared class strings, `AmbientBackdrop`, `Field`, `Modal` with focus trap and safe centring |
-| 842 to 990 | `AdminSignIn`, the admin gate behind `#admin` |
-| 992 to 1177 | `SignInScreen` (sign in and self sign up with the class code, plus the hand off to the admin gate) |
-| 1179 to 1314 | `AccountModal` (own password, sign out) |
-| 1316 to 1374 | `StatCard`, `SelectControl`, `ThemeToggle` |
-| 1376 to 1497 | `Lightbox` with Actual size toggle and set navigation |
-| 1499 to 1813 | `copyText` helpers and `AssignmentCard` including both picture grids, the owner line and the solution accordion |
-| 1815 to 1876 | `PictureGrid`, the shared picture picker |
-| 1878 to 2207 | `TaskModal` (add and edit, typeable subject, multi picture pickers, submit feedback) |
-| 2209 to 2214 | `makeClassCode` |
-| 2216 to 2534 | `AccountsPanel` (class code, admin gate link, add account, rename, role, reset, remove) |
-| 2536 to 2940 | `SettingsModal` (My password, Accounts, Subjects, Data) |
-| 2942 to 2966 | `EmptyState` |
-| 2968 to 3400 | `Dashboard` |
-| 3402 to 3424 | `Toast` |
-| 3426 to 3781 | `App` (gate state, session restore, account admin, board state) and bootstrap |
+| 332 to 493 | Storage helpers and the session layer (account and config normalising, load, save and clear the session, item fingerprint, origin label, gate detection, admin gate URL) |
+| 495 to 708 | File helpers: usage text, dates, due buckets, image resize pipeline, backup download, JSON read, item normalising with legacy picture shapes |
+| 710 to 858 | Shared class strings, `AmbientBackdrop`, `Field`, `Modal` with focus trap and safe centring |
+| 860 to 1008 | `AdminSignIn`, the admin gate behind `#admin` |
+| 1010 to 1199 | `SignInScreen` (sign in and self sign up with the class code, plus the hand off to the admin gate) |
+| 1201 to 1336 | `AccountModal` (own password, sign out) |
+| 1338 to 1396 | `StatCard`, `SelectControl`, `ThemeToggle` |
+| 1398 to 1519 | `Lightbox` with Actual size toggle and set navigation |
+| 1521 to 1835 | `copyText` helpers and `AssignmentCard` including both picture grids, the owner line and the solution accordion |
+| 1837 to 1898 | `PictureGrid`, the shared picture picker |
+| 1900 to 2229 | `TaskModal` (add and edit, typeable subject, multi picture pickers, submit feedback) |
+| 2231 to 2236 | `makeClassCode` |
+| 2238 to 2549 | `AccountsPanel` (class code, admin gate link, add account, rename, role, reset, remove) |
+| 2551 to 2955 | `SettingsModal` (My password, Accounts, Subjects, Data) |
+| 2957 to 2981 | `EmptyState` |
+| 2983 to 3415 | `Dashboard` |
+| 3417 to 3439 | `Toast` |
+| 3441 to 3841 | `App` (gate state, session restore, cross tab sync, account admin, board state) and bootstrap |
 
-## 10. The college quiz site
+## 10. Shared class board (Vercel + Supabase)
+
+The organizer used to be one browser at a time. Because the quiz site is hosted on Vercel, the deployment can now serve a tiny API, and one copy of the class lives behind it. Everything degrades to the old per browser behaviour when the API is not there.
+
+```
+browser  ->  /api/state  and  /api/action   (Vercel serverless, same origin)
+         ->  Supabase table class_state, one jsonb row  (service role key, server side only)
+```
+
+| Piece | Where | Role |
+|---|---|---|
+| `api/_db.js` | quiz project | The only code that touches Supabase, with the service role key |
+| `api/state.js` | quiz project | `GET` the whole class document: config, board, logins, attendance |
+| `api/action.js` | quiz project | `POST` `saveBoard`, `saveConfig`, `saveAccounts`, `attendance` |
+| `supabase/schema.sql` | quiz project | The one table plus row level security locked to the service role |
+| `index.html` | organizer | The same client lives in the single file app, with localStorage as the fallback |
+
+Rules that matter:
+
+- The board is uploaded and downloaded as a whole, so an admin deleting an assignment posts the shorter board and every other device adopts it on its next poll (12 seconds).
+- Uploads are skipped when the local state already matches what the server sent, so two tabs cannot bounce the board back and forth. The guard is a fingerprint of ids, timestamps, status, titles and picture counts, which avoids stringifying megabytes of picture data.
+- Accounts and the class code travel with it, so one login and one code cover both sites.
+- If `/api` does not answer, the organizer silently keeps using localStorage and the quiz falls back to the default class code. A failed fetch is caught, never thrown.
+- **Passwords are still plain text**, now in the shared document as well as in localStorage. Anyone who can read the Supabase project can read the class logins.
+
+To switch it on: create a free Supabase project, run `supabase/schema.sql` in its SQL editor, then set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the Vercel project and redeploy. Until then the API reports offline and both apps behave exactly as before.
+
+## 11. The college quiz site
 
 `C:\Users\Krishna\Downloads\Compressed\college-quiz-app\college-quiz`
 
@@ -210,7 +266,8 @@ Driven end to end and confirmed by DOM assertions plus screenshots:
 | `src/auth.js` | The shared sign on: reads and writes the same config and session keys, `signIn`, `signInAdmin`, `signOut`, `readSession`, `watchSession` |
 | `src/AccountChip.jsx` | Bottom right chip on the quiz site: sign in, who you are, open assignments, sign out; live updates from other tabs |
 | `src/OrganizerLink.jsx` | The Assignments pill in the top left corner |
-| `src/App.jsx` | Renders the chip on the welcome, gender, quiz and success screens; the admin panel now asks for an admin username and password checked against the organizer accounts instead of a hardcoded password |
+| `src/App.jsx` | The quiz site, left as it was: the assignments link and the sign-on chip on every screen, and an admin panel that authenticates against the organizer's logins instead of a hardcoded password |
+| `api/`, `supabase/schema.sql` | Serverless endpoints and the shared table |
 | `src/discord.js`, `src/DiscordPanel.jsx` | Discord webhook posting on start and finish, configured in the admin panel |
 
 `SHARED_WEBHOOK_URL` in `src/discord.js` is still empty: paste the webhook there so every classmate's browser can post.

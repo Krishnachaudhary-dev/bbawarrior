@@ -464,6 +464,58 @@
       return "class";
     }
 
+    function accountsFingerprint(accounts) {
+      return (accounts || [])
+        .map((a) => [a.id, a.username, a.password, a.role, a.lastSeen || 0].join(":"))
+        .join("|");
+    }
+
+    function itemsFingerprint(items) {
+      return items
+        .map((i) =>
+          [i.id, i.createdAt || 0, i.updatedAt || 0, i.status, i.title, (i.images || []).length, (i.solutionImages || []).length].join(":")
+        )
+        .join("|");
+    }
+
+    function storageOriginLabel() {
+      try {
+        const origin = window.location.origin;
+        if (origin && origin !== "null") return origin;
+      } catch (err) {
+        /* fall through to the file case */
+      }
+      return "this file, opened straight from your computer";
+    }
+
+    /* Shared class board. Served from the college quiz app, /api holds one copy for
+       everyone, so an admin deleting an assignment removes it for every student on
+       their next poll. Opened on its own, or with no network, the API does not
+       answer and this app keeps using its own localStorage copy as before. */
+    function remoteRequest(path, options) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      return fetch("./api" + path, {
+        method: (options && options.method) || "GET",
+        headers: { "Content-Type": "application/json" },
+        body: options ? options.body : undefined,
+        signal: controller.signal,
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null)
+        .finally(() => clearTimeout(timer));
+    }
+
+    async function remotePull() {
+      const data = await remoteRequest("/state");
+      return data && data.ok ? data : null;
+    }
+
+    async function remotePush(type, payload) {
+      const data = await remoteRequest("/action", { method: "POST", body: JSON.stringify({ type, payload }) });
+      return Boolean(data && data.ok);
+    }
+
     function adminGateUrl() {
       try {
         const url = new URL(window.location.href);
@@ -1166,6 +1218,10 @@
                 <Users size={14} />
                 One shared class board, Section H, Fall 2026
               </div>
+              <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
+                Everyone here shares the assignments posted by the admin. Logins on this device live
+                on {storageOriginLabel()}.
+              </p>
             </div>
           </div>
         </div>
@@ -2236,14 +2292,7 @@
       const countFor = (id) => items.filter((i) => i.ownerId === id).length;
       const adminCount = accounts.filter((a) => a.role === "admin").length;
       const adminUrl = adminGateUrl();
-      const originLabel = (() => {
-        try {
-          const origin = window.location.origin;
-          return origin && origin !== "null" ? origin : "this file on your own computer";
-        } catch (err) {
-          return "this browser";
-        }
-      })();
+      const originLabel = storageOriginLabel();
 
       async function copyAdminLink() {
         try {
@@ -3426,6 +3475,9 @@
     function App() {
       const [account, setAccount] = useState(null);
       const [gate, setGate] = useState(readGate);
+      const remoteOn = useRef(false);
+      const lastRemoteItems = useRef("");
+      const lastRemoteAccounts = useRef("");
       const [items, setItems] = useState(loadItems);
       const [config, setConfig] = useState(loadConfig);
       const [toast, setToast] = useState(null);
@@ -3463,6 +3515,65 @@
         return () => window.removeEventListener("hashchange", onHash);
       }, []);
 
+      /* Join the shared board on first load, then stay on it. Both no-ops when the
+         page is not served from the quiz app. */
+      useEffect(() => {
+        let alive = true;
+        (async () => {
+          const state = await remotePull();
+          if (!alive || !state) return;
+          remoteOn.current = true;
+          const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
+          lastRemoteItems.current = itemsFingerprint(remoteItems);
+          if (lastRemoteItems.current !== itemsFingerprint(items)) setItems(remoteItems);
+          const remoteAccounts = Array.isArray(state.accounts)
+            ? state.accounts.map(normaliseAccount).filter(Boolean)
+            : [];
+          if (remoteAccounts.length) {
+            lastRemoteAccounts.current = accountsFingerprint(remoteAccounts);
+            setConfig((current) =>
+              normaliseConfig({
+                subjects: (state.config && state.config.subjects) || current.subjects,
+                theme: current.theme,
+                classCode: (state.config && state.config.classCode) || current.classCode,
+                accounts: remoteAccounts,
+              })
+            );
+          }
+        })();
+        return () => {
+          alive = false;
+        };
+        /* Mount only: later changes travel through the poll and the save effect. */
+        /* eslint-disable-next-line */
+      }, []);
+
+      useEffect(() => {
+        const timer = setInterval(async () => {
+          if (!remoteOn.current) return;
+          const state = await remotePull();
+          if (!state) return;
+          const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
+          const fp = itemsFingerprint(remoteItems);
+          if (fp !== itemsFingerprint(items)) {
+            lastRemoteItems.current = fp;
+            setItems(remoteItems);
+          }
+          const remoteAccounts = Array.isArray(state.accounts)
+            ? state.accounts.map(normaliseAccount).filter(Boolean)
+            : [];
+          if (remoteAccounts.length) {
+            const afp = accountsFingerprint(remoteAccounts);
+            setConfig((current) => {
+              if (accountsFingerprint(current.accounts) === afp) return current;
+              lastRemoteAccounts.current = afp;
+              return normaliseConfig({ ...current, accounts: remoteAccounts });
+            });
+          }
+        }, 12000);
+        return () => clearInterval(timer);
+      }, [items]);
+
       /* One session key for both sites. The college quiz app writes the same key on
          the same origin, so signing in there lands here already signed in. */
       useEffect(() => {
@@ -3472,6 +3583,19 @@
         if (found) setAccount(found);
         else clearSession();
       }, [config.accounts]);
+
+      /* Another tab on this origin, or the college quiz site, can add an account,
+         reset a password or sign out. Without this the sign in form keeps working
+         from a stale list and rejects a login that is actually right. */
+      useEffect(() => {
+        const onStorage = (event) => {
+          const key = event.key;
+          if (!key || key === STORAGE_KEY) refreshBoard();
+          if (!key || key === CONFIG_KEY || key === SESSION_KEY) syncAccounts();
+        };
+        window.addEventListener("storage", onStorage);
+        return () => window.removeEventListener("storage", onStorage);
+      }, []);
 
       function openAdminGate() {
         window.location.hash = ADMIN_HASH;
@@ -3485,6 +3609,11 @@
 
       useEffect(() => {
         const ok = saveItems(items);
+        /* Only a change made here is worth uploading. Anything that arrived from
+           /api already matches what the server has, so it is skipped. */
+        if (ok && remoteOn.current && itemsFingerprint(items) !== lastRemoteItems.current) {
+          remotePush("saveBoard", items);
+        }
         if (!ok && !saveFailed.current) {
           saveFailed.current = true;
           notify("Browser storage is full. Remove a picture from an assignment, then try again.", "danger");
@@ -3523,6 +3652,9 @@
         const next = { ...config, accounts: nextAccounts, ...(extra || {}) };
         if (!commitConfig(next)) return false;
         setConfig(next);
+        if (remoteOn.current && accountsFingerprint(nextAccounts) !== lastRemoteAccounts.current) {
+          remotePush("saveAccounts", nextAccounts);
+        }
         /* Keep the signed in copy in step, so a password change takes effect at once. */
         setAccount((current) => {
           if (!current) return current;
@@ -3535,8 +3667,19 @@
       function signIn(username, password, options) {
         const adminOnly = Boolean(options && options.adminOnly);
         const found = config.accounts.find((a) => a.username.toLowerCase() === username.toLowerCase());
-        if (!found || found.password !== password) {
-          return { ok: false, reason: adminOnly ? "That admin login is not correct." : "That username and password do not match." };
+        if (!found) {
+          if (!config.accounts.length) {
+            return { ok: false, reason: "This device has no class logins yet. Create one with the class code." };
+          }
+          return { ok: false, reason: "No login called " + username + " is saved on this device." };
+        }
+        if (found.password !== password) {
+          return {
+            ok: false,
+            reason: adminOnly
+              ? "That admin login is not correct."
+              : "That password is not right for " + found.username + ".",
+          };
         }
         if (adminOnly && found.role !== "admin") {
           return { ok: false, reason: "That is a student login. Use the class sign in instead." };
@@ -3638,7 +3781,7 @@
       }
 
       function updateItem(id, payload) {
-        setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...payload } : item)));
+        setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...payload, updatedAt: Date.now() } : item)));
       }
 
       function cycleStatus(id) {
@@ -3672,9 +3815,33 @@
         notify((removed > 1 ? "Picture removed, " + (removed - 1) + " left" : "Picture removed"), "info");
       }
 
+      /* An admin posting an assignment in one tab should reach every other tab on this
+         device straight away. The fingerprint keeps the save effect from bouncing the
+         same board back and forth between tabs. */
+      function refreshBoard() {
+        const fresh = loadItems();
+        setItems((prev) => (itemsFingerprint(prev) === itemsFingerprint(fresh) ? prev : fresh));
+      }
+
+      function syncAccounts() {
+        const fresh = loadConfig();
+        setConfig(fresh);
+        const session = loadSession();
+        if (!session) {
+          setAccount(null);
+          return;
+        }
+        const found = fresh.accounts.find((a) => a.id === session.id);
+        if (found) setAccount(found);
+        else clearSession();
+      }
+
       function commitConfig(next) {
         if (!saveConfig(next)) return false;
         setConfig(next);
+        if (remoteOn.current) {
+          remotePush("saveConfig", { classCode: next.classCode, subjects: next.subjects });
+        }
         return true;
       }
 
