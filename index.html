@@ -501,7 +501,7 @@
         body: options ? options.body : undefined,
         signal: controller.signal,
       })
-        .then((res) => (res.ok ? res.json() : null))
+        .then((res) => res.json().catch(() => null))
         .catch(() => null)
         .finally(() => clearTimeout(timer));
     }
@@ -511,9 +511,34 @@
       return data && data.ok ? data : null;
     }
 
-    async function remotePush(type, payload) {
-      const data = await remoteRequest("/action", { method: "POST", body: JSON.stringify({ type, payload }) });
-      return Boolean(data && data.ok);
+    async function remotePush(type, payload, account) {
+      const data = await remoteRequest("/action", {
+        method: "POST",
+        body: JSON.stringify({ type, payload, account: account || null }),
+      });
+      /* The body is read whatever the status was, so a refusal from the server can
+         be shown instead of vanishing. */
+      return data && data.ok ? { ok: true } : { ok: false, reason: (data && data.reason) || "The server did not accept that change." };
+    }
+
+    /* Supabase Realtime, used only as a doorbell. The browser subscribes with the
+       anon key, which is public by design, and hears one thing: that an admin saved
+       something. No board data and no login ever travels on this channel, the browser
+       then re-reads /api/state where the access rules live. If this cannot connect
+       the poll below still keeps the board fresh, so a failure here is never fatal. */
+    let realtimeChannel = null;
+    async function openRealtime(config, onChange) {
+      if (realtimeChannel || !config || !config.url || !config.anonKey) return;
+      try {
+        const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.47.10");
+        const supabase = createClient(config.url, config.anonKey, { auth: { persistSession: false } });
+        realtimeChannel = supabase
+          .channel("class-board")
+          .on("broadcast", { event: "changed" }, () => onChange())
+          .subscribe();
+      } catch (err) {
+        realtimeChannel = null;
+      }
     }
 
     function adminGateUrl() {
@@ -1580,10 +1605,13 @@
       const [copied, setCopied] = useState(false);
       const [confirming, setConfirming] = useState(false);
 
-      /* The board is shared, but only the person who added a card (or an admin)
-         can change it. */
+      /* The board is shared and read only for everyone except an admin. Adding a
+         card is no longer enough to earn the right to change it: whoever posted it
+         still cannot edit, delete, repicture or move its status unless they are an
+         admin. Viewers keep everything that does not write: reading, filtering and
+         opening the solution. */
       const isAdmin = Boolean(account && account.role === "admin");
-      const canManage = isAdmin || Boolean(account && item.ownerId === account.id);
+      const canManage = isAdmin;
 
       const meta = STATUS_META[item.status] || STATUS_META.pending;
       const StatusIcon = meta.icon;
@@ -1685,15 +1713,17 @@
                         View
                       </span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => onRemoveImage(item.id, index)}
-                      aria-label={"Remove picture " + (index + 1)}
-                      title="Remove picture"
-                      className="absolute right-2 top-2 rounded-lg bg-white/90 p-2 text-slate-600 opacity-0 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100 group-hover/img:opacity-100"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    {canManage && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveImage(item.id, index)}
+                        aria-label={"Remove picture " + (index + 1)}
+                        title="Remove picture"
+                        className="absolute right-2 top-2 rounded-lg bg-white/90 p-2 text-slate-600 opacity-0 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100 group-hover/img:opacity-100"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                     {index === 3 && item.images.length > 4 && (
                       <span className="pointer-events-none absolute bottom-2 right-2 rounded-lg bg-slate-900/75 px-2 py-1 text-[11px] font-bold text-white">
                         +{item.images.length - 4} more
@@ -1702,7 +1732,7 @@
                   </div>
                 ))}
               </div>
-              {item.images.length < MAX_PICTURES && (
+              {canManage && item.images.length < MAX_PICTURES && (
                 <button
                   type="button"
                   onClick={() => onPickImage(item.id)}
@@ -1713,7 +1743,7 @@
                 </button>
               )}
             </div>
-          ) : (
+          ) : canManage ? (
             <button
               type="button"
               onClick={() => onPickImage(item.id)}
@@ -1722,7 +1752,7 @@
               <ImagePlus size={14} />
               Add pictures
             </button>
-          )}
+          ) : null}
 
           <h3 className="mt-3 font-display text-base font-semibold leading-snug text-slate-900 dark:text-slate-50">{item.title}</h3>
 
@@ -1743,17 +1773,30 @@
           </p>
 
           <div className="mt-4 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => onCycleStatus(item.id)}
-              title="Change status"
-              aria-label={"Status: " + meta.label + ". Activate to move to " + STATUS_META[NEXT_STATUS[item.status]].label + "."}
-              className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold ring-1 ring-inset transition active:scale-95 ${meta.chip}`}
-            >
-              <StatusIcon size={13} className={item.status === "in-progress" ? "transition group-hover:animate-spin" : ""} />
-              {meta.label}
-            </button>
-            <span className="hidden text-[11px] text-slate-500 sm:inline dark:text-slate-400">click status to cycle</span>
+            {canManage ? (
+              <button
+                type="button"
+                onClick={() => onCycleStatus(item.id)}
+                title="Change status"
+                aria-label={"Status: " + meta.label + ". Activate to move to " + STATUS_META[NEXT_STATUS[item.status]].label + "."}
+                className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold ring-1 ring-inset transition active:scale-95 ${meta.chip}`}
+              >
+                <StatusIcon size={13} className={item.status === "in-progress" ? "transition group-hover:animate-spin" : ""} />
+                {meta.label}
+              </button>
+            ) : (
+              /* A viewer sees the same status, as a readout rather than a control.
+                 No button, no hover, nothing for a click to land on. */
+              <span
+                className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold ring-1 ring-inset ${meta.chip}`}
+              >
+                <StatusIcon size={13} />
+                {meta.label}
+              </span>
+            )}
+            {canManage && (
+              <span className="hidden text-[11px] text-slate-500 sm:inline dark:text-slate-400">click status to cycle</span>
+            )}
           </div>
 
           {item.solution || item.solutionImages.length > 0 ? (
@@ -2997,13 +3040,15 @@
           <h3 className="mt-4 font-display text-base font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
           <p className="mx-auto mt-1.5 max-w-sm text-sm leading-relaxed text-slate-500 dark:text-slate-400">{body}</p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-            <button
-              type="button"
-              onClick={onAction}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
-            >
-              {actionLabel}
-            </button>
+            {actionLabel && (
+              <button
+                type="button"
+                onClick={onAction}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 active:scale-[0.98] dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              >
+                {actionLabel}
+              </button>
+            )}
             {secondary}
           </div>
         </div>
@@ -3193,16 +3238,19 @@
                 </div>
 
                 <div className="ml-auto flex items-center gap-2">
-                  <button type="button" onClick={openCreate} className={BTN_PRIMARY + " px-3.5 py-2.5"}>
-                    <Plus size={16} />
-                    <span className="hidden sm:inline">New assignment</span>
-                  </button>
+                  {account && account.role === "admin" && (
+                    <button type="button" onClick={openCreate} className={BTN_PRIMARY + " px-3.5 py-2.5"}>
+                      <Plus size={16} />
+                      <span className="hidden sm:inline">New assignment</span>
+                    </button>
+                  )}
                   <ThemeToggle theme={theme} onChange={onThemeChange} />
                   {account && account.role === "admin" && (
                     <button type="button" onClick={() => setSettingsOpen(true)} className={BTN_ICON} title="Admin settings" aria-label="Admin settings">
                       <Settings size={16} />
                     </button>
                   )}
+                  {/* No gear means no door, but say so rather than leaving a gap. */}
                   {account && (
                     <button
                       type="button"
@@ -3340,8 +3388,12 @@
                 ) : items.length === 0 ? (
                   <EmptyState
                     title="No assignments yet"
-                    body="Add the first task for Section H and it appears here straight away."
-                    actionLabel="Add first assignment"
+                    body={
+                      account && account.role === "admin"
+                        ? "Add the first task for Section H and it appears here straight away."
+                        : "There is nothing on the board yet. An admin posts the assignments, they land here for everyone to read."
+                    }
+                    actionLabel={account && account.role === "admin" ? "Add first assignment" : null}
                     onAction={openCreate}
                   />
                 ) : (
@@ -3351,10 +3403,12 @@
                     actionLabel="Clear filters"
                     onAction={clearFilters}
                     secondary={
-                      <button type="button" onClick={openCreate} className={BTN_GHOST}>
-                        <Plus size={15} />
-                        New assignment
-                      </button>
+                      account && account.role === "admin" ? (
+                        <button type="button" onClick={openCreate} className={BTN_GHOST}>
+                          <Plus size={15} />
+                          New assignment
+                        </button>
+                      ) : null
                     }
                   />
                 )}
@@ -3478,6 +3532,22 @@
       const remoteOn = useRef(false);
       const lastRemoteItems = useRef("");
       const lastRemoteAccounts = useRef("");
+      const syncRef = useRef(null);
+
+      /* The role rule, in one place: an admin writes to the shared board, everyone
+         else reads it. The server checks this too, so hiding a button is a courtesy
+         rather than the protection. */
+      const isAdmin = Boolean(account && account.role === "admin");
+
+      /* Every write carries the signed in admin's credentials, because the server
+         verifies them. A refusal is surfaced instead of swallowed, so a rejected
+         change is never mistaken for a saved one. */
+      const upload = (type, payload) => {
+        if (!account) return;
+        remotePush(type, payload, { id: account.id, password: account.password }).then((result) => {
+          if (!result.ok && result.reason) notify(result.reason, "danger");
+        });
+      };
       const [items, setItems] = useState(loadItems);
       const [config, setConfig] = useState(loadConfig);
       const [toast, setToast] = useState(null);
@@ -3540,6 +3610,11 @@
               })
             );
           }
+          /* Once the board answers, open the doorbell so an admin save shows up here
+             at once rather than at the next poll. */
+          openRealtime(state.realtime, () => {
+            if (syncRef.current) syncRef.current();
+          });
         })();
         return () => {
           alive = false;
@@ -3548,31 +3623,39 @@
         /* eslint-disable-next-line */
       }, []);
 
+      /* One sync routine with two triggers: the safety poll, and the realtime doorbell
+         when another admin saves. It lives in a ref so a doorbell that rings between
+         renders still compares against the current items rather than a stale copy. */
+      const syncFromRemote = async () => {
+        if (!remoteOn.current) return;
+        const state = await remotePull();
+        if (!state) return;
+        const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
+        const fp = itemsFingerprint(remoteItems);
+        if (fp !== itemsFingerprint(items)) {
+          lastRemoteItems.current = fp;
+          setItems(remoteItems);
+        }
+        const remoteAccounts = Array.isArray(state.accounts)
+          ? state.accounts.map(normaliseAccount).filter(Boolean)
+          : [];
+        if (remoteAccounts.length) {
+          const afp = accountsFingerprint(remoteAccounts);
+          setConfig((current) => {
+            if (accountsFingerprint(current.accounts) === afp) return current;
+            lastRemoteAccounts.current = afp;
+            return normaliseConfig({ ...current, accounts: remoteAccounts });
+          });
+        }
+      };
+      syncRef.current = syncFromRemote;
+
       useEffect(() => {
-        const timer = setInterval(async () => {
-          if (!remoteOn.current) return;
-          const state = await remotePull();
-          if (!state) return;
-          const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
-          const fp = itemsFingerprint(remoteItems);
-          if (fp !== itemsFingerprint(items)) {
-            lastRemoteItems.current = fp;
-            setItems(remoteItems);
-          }
-          const remoteAccounts = Array.isArray(state.accounts)
-            ? state.accounts.map(normaliseAccount).filter(Boolean)
-            : [];
-          if (remoteAccounts.length) {
-            const afp = accountsFingerprint(remoteAccounts);
-            setConfig((current) => {
-              if (accountsFingerprint(current.accounts) === afp) return current;
-              lastRemoteAccounts.current = afp;
-              return normaliseConfig({ ...current, accounts: remoteAccounts });
-            });
-          }
+        const timer = setInterval(() => {
+          if (syncRef.current) syncRef.current();
         }, 12000);
         return () => clearInterval(timer);
-      }, [items]);
+      }, []);
 
       /* One session key for both sites. The college quiz app writes the same key on
          the same origin, so signing in there lands here already signed in. */
@@ -3611,8 +3694,8 @@
         const ok = saveItems(items);
         /* Only a change made here is worth uploading. Anything that arrived from
            /api already matches what the server has, so it is skipped. */
-        if (ok && remoteOn.current && itemsFingerprint(items) !== lastRemoteItems.current) {
-          remotePush("saveBoard", items);
+        if (ok && remoteOn.current && isAdmin && itemsFingerprint(items) !== lastRemoteItems.current) {
+          upload("saveBoard", items);
         }
         if (!ok && !saveFailed.current) {
           saveFailed.current = true;
@@ -3652,8 +3735,8 @@
         const next = { ...config, accounts: nextAccounts, ...(extra || {}) };
         if (!commitConfig(next)) return false;
         setConfig(next);
-        if (remoteOn.current && accountsFingerprint(nextAccounts) !== lastRemoteAccounts.current) {
-          remotePush("saveAccounts", nextAccounts);
+        if (remoteOn.current && isAdmin && accountsFingerprint(nextAccounts) !== lastRemoteAccounts.current) {
+          upload("saveAccounts", nextAccounts);
         }
         /* Keep the signed in copy in step, so a password change takes effect at once. */
         setAccount((current) => {
@@ -3839,8 +3922,8 @@
       function commitConfig(next) {
         if (!saveConfig(next)) return false;
         setConfig(next);
-        if (remoteOn.current) {
-          remotePush("saveConfig", { classCode: next.classCode, subjects: next.subjects });
+        if (remoteOn.current && isAdmin) {
+          upload("saveConfig", { classCode: next.classCode, subjects: next.subjects });
         }
         return true;
       }
