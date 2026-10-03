@@ -28,7 +28,9 @@ export default async function handler(req, res) {
   try {
     const report = await diagnose();
     res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ ok: true, ...report });
+    /* ok means the database answered, not that this file ran. A report that says
+       ok true with reachable false would be worse than no report at all. */
+    return res.status(200).json({ ok: report.reachable, ...report });
   } catch (err) {
     /* diagnose catches its own failures, so reaching here means the check itself
        broke. Say so rather than pretending the database answered. */
