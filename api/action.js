@@ -1,4 +1,4 @@
-import { appendAttendance, isConfigured, readState, writeState } from './_db.js';
+import { appendAttendance, describeError, isConfigured, readState, writeState } from './_db.js';
 
 /**
  * POST /api/action
@@ -13,6 +13,7 @@ import { appendAttendance, isConfigured, readState, writeState } from './_db.js'
  * point: an admin deleting an assignment posts the shorter board and every other
  * device adopts it on its next poll.
  */
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -43,6 +44,7 @@ export default async function handler(req, res) {
     await writeState(next);
     return res.status(200).json({ ok: true, syncedAt: Date.now() });
   } catch (err) {
+    console.error('[api/action] write failed', type, JSON.stringify(describeError(err)));
     return res.status(500).json({ ok: false, reason: 'Could not save to the class board.' });
   }
 }
