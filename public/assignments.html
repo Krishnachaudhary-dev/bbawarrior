@@ -508,7 +508,7 @@
        answer and this app keeps using its own localStorage copy as before. */
     function remoteRequest(path, options) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4000);
+      const timer = setTimeout(() => controller.abort(), (options && options.timeout) || 4000);
       return fetch("./api" + path, {
         method: (options && options.method) || "GET",
         headers: { "Content-Type": "application/json" },
@@ -529,6 +529,9 @@
       const data = await remoteRequest("/action", {
         method: "POST",
         body: JSON.stringify({ type, payload, account: account || null }),
+        /* A write gets longer than a read, because cutting one off at four seconds
+           on a weak signal looked exactly like a board that refused it. */
+        timeout: 10000,
       });
       /* The body is read whatever the status was, so a refusal from the server can
          be shown instead of vanishing. A request that never arrived is not a
@@ -568,19 +571,43 @@
        Three answers rather than two, because a caller must never confuse a board that
        said no with a board that could not be reached: agreeing, with the fields worth
        remembering and never the stored secret; refusing, with its own reason; or not
-       answering at all. */
+       answering at all.
+
+       A claim may carry an id, which every device that has synced has, or a plain
+       username, which is what a device that has never met this login has. Either way
+       the board decides, because the browser is not where the password lives. */
     async function verifyLogin(claims, adminOnly) {
       const data = await remoteRequest("/action", {
         method: "POST",
         body: JSON.stringify({
           type: "checkLogin",
-          payload: { adminOnly: Boolean(adminOnly) },
+          payload: {
+            adminOnly: Boolean(adminOnly),
+            username: claims && claims.username ? claims.username : undefined,
+          },
           account: claims || null,
         }),
+        timeout: 10000,
       });
       if (!data) return { ok: false, offline: true, reason: "The class board did not answer." };
       if (!data.ok || !data.account) {
         return { ok: false, offline: false, reason: data.reason || "That password is not right." };
+      }
+      return { ok: true, offline: false, account: data.account };
+    }
+
+    /* Creates a login on the board, which is where the password gets hashed and
+       where every other device will meet it. Answers the way verifyLogin does:
+       agreed, refused with a reason, or no answer at all. Nothing is written here,
+       so a refused enrolment leaves no half made account behind. */
+    async function enrol(payload) {
+      const data = await remoteRequest("/action", {
+        method: "POST",
+        body: JSON.stringify({ type: "enrol", payload: payload }),
+      });
+      if (!data) return { ok: false, offline: true, reason: "The class board did not answer." };
+      if (!data.ok || !data.account) {
+        return { ok: false, offline: false, reason: data.reason || "That account could not be created." };
       }
       return { ok: true, offline: false, account: data.account };
     }
@@ -1177,8 +1204,12 @@
 
         if (form.password.length < 4) return fail("Use at least 4 characters for a password.");
         if (!form.code.trim()) return fail("Enter the class code your admin gave you.");
-        const result = onRegister(username, form.password, form.code.trim());
-        if (!result.ok) return fail(result.reason);
+        /* Awaited because the board is asked to create the login, which is the only
+           place the password gets hashed. A local copy alone would sign this student
+           in here and nowhere else. */
+        Promise.resolve(onRegister(username, form.password, form.code.trim())).then((result) => {
+          if (result && !result.ok) fail(result.reason);
+        });
       }
 
       const creating = mode === "register";
@@ -3643,6 +3674,8 @@
       const lastRemoteItems = useRef("");
       const lastRemoteAccounts = useRef("");
       const syncRef = useRef(null);
+      /* When the board last went quiet, so a run of failed saves says so once. */
+      const offlineNotice = useRef(0);
       /* Set when the server refuses a save, cleared when one lands. It has to
          outlive the toast: a refused edit is still on screen, so without a warning
          that stays put it looks exactly like an edit that saved. */
@@ -3664,14 +3697,20 @@
         remotePush(type, payload, creds || { id: account.id, password: account.password }).then((result) => {
           if (result.ok) {
             /* A save that lands means the board is current again. */
+            offlineNotice.current = 0;
             setSaveError(null);
             return;
           }
           if (result.offline) {
-            /* The change is still on this device and the board gets it when it
-               answers again, so this is worth saying once. It is not a refused
-               save and must not wear the warning that means one. */
-            notify(result.reason, "info");
+            /* At most one line per half minute, because a dropped connection is a
+               condition rather than an event. A toast per failed save turned one
+               wobble of a weak signal into a stream of them, which is how a notice
+               meant to be helpful becomes something to ignore. */
+            const now = Date.now();
+            if (now - offlineNotice.current > 30000) {
+              offlineNotice.current = now;
+              notify(result.reason, "info");
+            }
             return;
           }
           const reason = result.reason || "The class board did not accept that change.";
@@ -3895,26 +3934,48 @@
 
       function signIn(username, password, options) {
         const adminOnly = Boolean(options && options.adminOnly);
-        const found = config.accounts.find((a) => a.username.toLowerCase() === username.toLowerCase());
-        if (!found) {
-          if (!config.accounts.length) {
-            return { ok: false, reason: "This device has no class logins yet. Create one with the class code." };
-          }
-          return { ok: false, reason: "No login called " + username + " is saved on this device." };
-        }
-        if (!found.password) {
-          /* No trusted copy here. The board still holds the real secret, so ask it
-             rather than giving up, and remember the password only once it agrees. */
-          return verifyLogin({ id: found.id, password }, adminOnly).then((verdict) => {
+        const name = username.replace(/\s+/g, " ").trim();
+        const found = config.accounts.find((a) => a.username.toLowerCase() === name.toLowerCase());
+        if (!found || !found.password) {
+          /* Either this browser has never heard of the login, or it has and holds no
+             secret for it. Neither is an answer: the board keeps every class login,
+             so ask it by id when there is one and by name when there is not, rather
+             than telling a classmate they do not exist because this phone is new. */
+          return verifyLogin(found ? { id: found.id, password } : { username: name, password }, adminOnly).then((verdict) => {
             if (!verdict.ok) {
               let reason;
-              if (verdict.offline) reason = "The class board did not answer, so this device cannot check that password.";
-              else if (adminOnly) reason = "That admin login is not correct.";
-              else reason = "That password is not right for " + found.username + ".";
+              if (verdict.offline) {
+                reason = "The class board did not answer, so this device cannot check that password.";
+              } else if (!found) {
+                reason = verdict.reason || "No login called " + name + " is on the class board.";
+              } else if (adminOnly) {
+                reason = "That admin login is not correct.";
+              } else {
+                reason = "That password is not right for " + found.username + ".";
+              }
               return { ok: false, reason };
             }
-            const adopted = { ...found, ...verdict.account, password, lastSeen: Date.now() };
-            commitAccounts(config.accounts.map((a) => (a.id === found.id ? adopted : a)));
+            const who = verdict.account;
+            /* The same role rule as the local path, so a student cannot unlock the
+               admin gate by arriving on a device that has never seen the list. */
+            if (adminOnly && who.role !== "admin") {
+              return { ok: false, reason: "That is a student login. Use the class sign in instead." };
+            }
+            if (!adminOnly && who.role === "admin") {
+              return { ok: false, reason: "Admin accounts unlock from the admin gate.", action: "admin-gate" };
+            }
+            const adopted = {
+              id: who.id,
+              username: who.username,
+              password,
+              role: who.role,
+              createdAt: who.createdAt,
+              lastSeen: Date.now(),
+            };
+            const known = config.accounts.some((a) => String(a.id) === String(who.id));
+            commitAccounts(known
+              ? config.accounts.map((a) => (String(a.id) === String(who.id) ? adopted : a))
+              : [...config.accounts, adopted]);
             setAccount(adopted);
             saveSession(adopted);
             return { ok: true };
@@ -3942,19 +4003,40 @@
         return { ok: true };
       }
 
-      function register(username, password, code) {
+      /* A classmate joining.
+
+         The board is asked to create the login rather than this device quietly
+         keeping one, because a login that exists in a single browser is not a class
+         login: the student signs in here and nowhere else, and no admin ever sees
+         them. The server also names the account, so its id is adopted afterwards and
+         the two copies stay one student instead of becoming two.
+
+         With no board to answer there is nowhere to store a login, so the account is
+         kept on this device as before and the board picks it up if an admin ever
+         adds it by hand. */
+      async function register(username, password, code) {
+        const name = username.replace(/\s+/g, " ").trim();
+        if (name.length < 2) return { ok: false, reason: "Usernames need 2 to 24 characters." };
+        if (!password || password.length < 4) {
+          return { ok: false, reason: "Use at least 4 characters for a password." };
+        }
         if (code.trim().toLowerCase() !== config.classCode.trim().toLowerCase()) {
           return { ok: false, reason: "That class code is not right." };
         }
-        if (config.accounts.some((a) => a.username.toLowerCase() === username.toLowerCase())) {
+        if (config.accounts.some((a) => a.username.toLowerCase() === name.toLowerCase())) {
           return { ok: false, reason: "That username is already taken. Try signing in." };
         }
+
+        const verdict = await enrol({ username: name, password, code });
+        if (verdict && !verdict.ok && !verdict.offline) return { ok: false, reason: verdict.reason };
+
+        const made = verdict && verdict.ok ? verdict.account : null;
         const fresh = {
-          id: uid(),
-          username,
+          id: made ? made.id : uid(),
+          username: name,
           password,
           role: "student",
-          createdAt: Date.now(),
+          createdAt: made ? made.createdAt : Date.now(),
           lastSeen: Date.now(),
         };
         if (!commitAccounts([...config.accounts, fresh])) {
@@ -3962,7 +4044,7 @@
         }
         setAccount(fresh);
         saveSession(fresh);
-        return { ok: true };
+        return { ok: true, offline: !made };
       }
 
       function signOut() {
@@ -4020,7 +4102,15 @@
       }
 
       function addAccount({ username, password, role }) {
-        return commitAccounts([...config.accounts, { id: uid(), username, password, role, createdAt: Date.now(), lastSeen: 0 }]);
+        /* A student who joined on their own phone is already on the board under a
+           name, and a second login with the same name is two people who can never
+           tell which is which. */
+        const name = username.replace(/\s+/g, " ").trim();
+        if (config.accounts.some((a) => a.username.toLowerCase() === name.toLowerCase())) {
+          notify("Someone with that name is already on the list", "danger");
+          return false;
+        }
+        return commitAccounts([...config.accounts, { id: uid(), username: name, password, role, createdAt: Date.now(), lastSeen: 0 }]);
       }
 
       function renameAccount(id, username) {

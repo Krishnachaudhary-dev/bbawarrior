@@ -1,4 +1,4 @@
-import { appendAttendance, authorise, broadcastChange, countPlainPasswords, describeError, isConfigured, keepStoredSecrets, readState, writeState } from './_db.js';
+import { appendAttendance, authorise, broadcastChange, countPlainPasswords, describeError, isConfigured, keepStoredSecrets, readState, verifyPassword, writeState } from './_db.js';
 
 /**
  * POST /api/action
@@ -74,7 +74,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    const verdict = await authorise(account, ADMIN_ONLY.has(type));
+    /* checkLogin is exempt because it is how a caller with nothing to prove yet gets
+       a claim verified. Asking authorise first would refuse every such caller before
+       this function could answer, which is exactly the device that has never synced.
+       It does its own checking below, against the same stored hash. */
+    const verdict = type === 'checkLogin' ? { ok: true } : await authorise(account, ADMIN_ONLY.has(type));
     if (!verdict.ok) {
       return res.status(403).json({ ok: false, reason: verdict.reason });
     }
@@ -82,20 +86,39 @@ export default async function handler(req, res) {
     if (type === 'checkLogin') {
       /* Confirms a password the browser typed against the copy that lives on the board.
          Nothing is written and nothing is broadcast. The caller already knows the
-         password, so the response carries only the fields it needs to remember. */
+         password, so the response carries only the fields it needs to remember.
+
+         An id is used when the caller has one, which every device that has synced
+         does. A username is accepted as well, because a device that has never met
+         this login has nothing else to offer, and this is where the class roster
+         actually lives. Either way the stored hash decides, never the browser. */
       const adminOnly = Boolean(payload && payload.adminOnly);
-      const verdict = await authorise(account, adminOnly);
-      if (!verdict.ok) {
-        return res.status(403).json({ ok: false, reason: verdict.reason });
+      const state = (await readState()) || {};
+      const accounts = Array.isArray(state.accounts) ? state.accounts : [];
+      const id = account && account.id ? String(account.id) : '';
+      const wanted = String((payload && payload.username) || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const found = id
+        ? accounts.find((a) => String(a.id) === id)
+        : wanted
+          ? accounts.find((a) => String(a.username || '').replace(/\s+/g, ' ').trim().toLowerCase() === wanted)
+          : null;
+      if (!found) {
+        return res.status(403).json({ ok: false, reason: 'That login is not on this board.' });
+      }
+      if (!verifyPassword(found.password, account && account.password)) {
+        return res.status(403).json({ ok: false, reason: 'That password is not right.' });
+      }
+      if (adminOnly && found.role !== 'admin') {
+        return res.status(403).json({ ok: false, reason: 'That is a student login.' });
       }
       return res.status(200).json({
         ok: true,
         account: {
-          id: verdict.account.id,
-          username: verdict.account.username,
-          role: verdict.account.role,
-          createdAt: verdict.account.createdAt,
-          lastSeen: verdict.account.lastSeen,
+          id: found.id,
+          username: found.username,
+          role: found.role,
+          createdAt: found.createdAt,
+          lastSeen: found.lastSeen,
         },
       });
     }
