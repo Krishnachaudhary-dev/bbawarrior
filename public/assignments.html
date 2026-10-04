@@ -513,18 +513,45 @@
        everyone, so an admin deleting an assignment removes it for every student on
        their next poll. Opened on its own, or with no network, the API does not
        answer and this app keeps using its own localStorage copy as before. */
+    /* Why the last board call came back with nothing: "slow" for one cut off while the
+       function woke up, "unreachable" for a network that is not there. The sign in
+       screen says which, because they call for different things. */
+    let lastFailure = null;
+
     function remoteRequest(path, options) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), (options && options.timeout) || 4000);
-      return fetch("./api" + path, {
-        method: (options && options.method) || "GET",
-        headers: { "Content-Type": "application/json" },
-        body: options ? options.body : undefined,
-        signal: controller.signal,
-      })
-        .then((res) => res.json().catch(() => null))
-        .catch(() => null)
-        .finally(() => clearTimeout(timer));
+      const limit = (options && options.timeout) || 4000;
+      /* One board call, tried at most twice. A serverless function that has been
+         asleep for a while takes seconds to wake up, and a request cut off during
+         that wake is indistinguishable from a board that is not there: both arrive
+         as nothing at all. Believing the first one is what turned a cold start into
+         "the class board did not answer" and a student locked out of their own
+         account. */
+      return (async () => {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const controller = new AbortController();
+          let late = false;
+          const timer = setTimeout(() => {
+            late = true;
+            controller.abort();
+          }, limit);
+          try {
+            const res = await fetch("./api" + path, {
+              method: (options && options.method) || "GET",
+              headers: { "Content-Type": "application/json" },
+              body: options ? options.body : undefined,
+              signal: controller.signal,
+            });
+            const data = await res.json();
+            lastFailure = null;
+            return data;
+          } catch (err) {
+            lastFailure = late ? "slow" : "unreachable";
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+        return null;
+      })();
     }
 
     async function remotePull() {
@@ -544,7 +571,7 @@
          be shown instead of vanishing. A request that never arrived is not a
          refusal though, and the two have to stay apart: an alert that says a save
          was turned down would be lying about a dropped connection. */
-      if (!data) return { ok: false, offline: true, reason: "No connection to the class board." };
+      if (!data) return { ok: false, offline: true, reason: lastFailure === "slow" ? "The class board took too long to answer." : "No connection to the class board." };
       return data.ok
         ? { ok: true, offline: false }
         : { ok: false, offline: false, reason: data.reason || "The server did not accept that change." };
@@ -596,7 +623,16 @@
         }),
         timeout: 10000,
       });
-      if (!data) return { ok: false, offline: true, reason: "The class board did not answer." };
+      if (!data) {
+        return {
+          ok: false,
+          offline: true,
+          reason:
+            lastFailure === "slow"
+              ? "The class board took too long to answer. Try again in a moment."
+              : "This device cannot reach the class board.",
+        };
+      }
       if (!data.ok || !data.account) {
         return { ok: false, offline: false, reason: data.reason || "That password is not right." };
       }
@@ -616,11 +652,65 @@
            which is how one student ended up with two logins. */
         timeout: 10000,
       });
-      if (!data) return { ok: false, offline: true, reason: "The class board did not answer." };
+      if (!data) {
+        return {
+          ok: false,
+          offline: true,
+          reason:
+            lastFailure === "slow"
+              ? "The class board took too long to answer. Try again in a moment."
+              : "This device cannot reach the class board.",
+        };
+      }
       if (!data.ok || !data.account) {
         return { ok: false, offline: false, reason: data.reason || "That account could not be created." };
       }
       return { ok: true, offline: false, account: data.account };
+    }
+
+    /* An enrolment the board never acknowledged is kept and sent again the next
+       time the board answers, because the alternative is a login that exists on one
+       phone and nowhere else, which is the whole thing this flow exists to prevent.
+       Nothing new is written down: the password is already in local storage as this
+       account's own. */
+    const PENDING_ENROLMENT_KEY = "bba-section-h-organizer.pending-enrolment.v1";
+
+    function readPendingEnrolment() {
+      try {
+        const raw = localStorage.getItem(PENDING_ENROLMENT_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && parsed.username && parsed.password ? parsed : null;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function writePendingEnrolment(entry) {
+      try {
+        if (entry) localStorage.setItem(PENDING_ENROLMENT_KEY, JSON.stringify(entry));
+        else localStorage.removeItem(PENDING_ENROLMENT_KEY);
+      } catch (err) {
+        /* Storage is a nicety here, never a requirement. */
+      }
+    }
+
+    async function flushPendingEnrolment() {
+      const pending = readPendingEnrolment();
+      if (!pending) return null;
+      const verdict = await enrol(pending);
+      if (!verdict.ok) {
+        /* Offline is worth another go. A refusal is not, so the request is dropped
+           rather than posted again every twelve seconds for ever. Dropping it also
+           covers the name already being taken, where the board has the account after
+           all and the merge turns this copy into it. */
+        if (!verdict.offline) writePendingEnrolment(null);
+        return null;
+      }
+      /* The board now has it. The next merge recognises the same name under the id
+         it named, so the local copy becomes the board's account rather than a twin. */
+      writePendingEnrolment(null);
+      return verdict.account;
     }
 
     function adminGateUrl() {
@@ -3771,6 +3861,9 @@
       useEffect(() => {
         let alive = true;
         (async () => {
+          /* Anything left over from a join the board missed goes first, so the pull
+             below already contains it. */
+          await flushPendingEnrolment();
           const state = await remotePull();
           if (!alive || !state) return;
           remoteOn.current = true;
@@ -3810,6 +3903,7 @@
          renders still compares against the current items rather than a stale copy. */
       const syncFromRemote = async () => {
         if (!remoteOn.current) return;
+        await flushPendingEnrolment();
         const state = await remotePull();
         if (!state) return;
         const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
@@ -3956,7 +4050,7 @@
             if (!verdict.ok) {
               let reason;
               if (verdict.offline) {
-                reason = "The class board did not answer, so this device cannot check that password.";
+                reason = verdict.reason || "The class board could not be asked about that password.";
               } else if (!found) {
                 reason = verdict.reason || "No login called " + name + " is on the class board.";
               } else if (adminOnly) {
@@ -4055,6 +4149,10 @@
         }
         setAccount(fresh);
         saveSession(fresh);
+        /* If the board never answered, the account exists here and nowhere else.
+           Keeping the request means it is sent the moment the board is back, rather
+           than leaving a classmate signed in to a login nobody else can see. */
+        if (!made) writePendingEnrolment({ username: name, password, code });
         return { ok: true, offline: !made };
       }
 
