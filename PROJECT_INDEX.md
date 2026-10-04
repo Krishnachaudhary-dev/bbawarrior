@@ -235,26 +235,60 @@ The organizer used to be one browser at a time. Because the quiz site is hosted 
 
 ```
 browser  ->  /api/state  and  /api/action   (Vercel serverless, same origin)
-         ->  Supabase table class_state, one jsonb row  (service role key, server side only)
+         ->  Supabase table class_state, one jsonb row  (secret key, server side only)
+
+admin saves  ->  /api/action  ->  write row  ->  ring doorbell on Supabase Realtime
+                                             ->  every other browser re-reads /api/state
 ```
 
 | Piece | Where | Role |
 |---|---|---|
-| `api/_db.js` | quiz project | The only code that touches Supabase, with the service role key |
-| `api/state.js` | quiz project | `GET` the whole class document: config, board, logins, attendance |
+| `api/_db.js` | quiz project | The only code that touches Supabase, with the secret key. Also owns `publicState`, `authorise` and `broadcastChange` |
+| `api/state.js` | quiz project | `GET` the class document: config, board, logins, attendance, and the public realtime config |
 | `api/action.js` | quiz project | `POST` `saveBoard`, `saveConfig`, `saveAccounts`, `attendance` |
-| `supabase/schema.sql` | quiz project | The one table plus row level security locked to the service role |
+| `api/health.js` | quiz project | `GET` a diagnostic: whether it is configured, which key it read, a non secret fingerprint of that key, and why a read failed |
+| `supabase/schema.sql` | quiz project | The one table plus row level security locked to the secret key |
 | `index.html` | organizer | The same client lives in the single file app, with localStorage as the fallback |
 
-Rules that matter:
+### Environment variables
 
-- The board is uploaded and downloaded as a whole, so an admin deleting an assignment posts the shorter board and every other device adopts it on its next poll (12 seconds).
+Supabase renamed its keys, so both spellings are read and the new one wins.
+
+| Variable | Purpose |
+|---|---|
+| `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+| `SUPABASE_SECRET_KEY` | `sb_secret_...`, the server side key. The legacy `SUPABASE_SERVICE_ROLE_KEY` is still read |
+| `SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_...`, handed to the browser for the realtime doorbell only. The legacy `SUPABASE_ANON_KEY` is still read |
+
+Paste the value alone. A whole `NAME=value` line, or quotes left around the value, is refused by Supabase with "Invalid API key", which reads like a wrong key when it is only a messy paste, so `cleanKeyValue` unwraps it first. `GET /api/health` reports which variable each key came from and a fingerprint (prefix, length, first four characters), never the key itself.
+
+### Roles
+
+| Role | Can |
+|---|---|
+| Admin | Everything: post, edit, delete, cycle status, manage subjects, class code and logins. The only role whose writes the server accepts |
+| Student | Read the board, filter, open solutions, and record attendance |
+
+- `canManage` in `AssignmentCard` is `isAdmin` alone. Adding a card no longer earns the right to change it.
+- For a viewer the status chip renders as a plain `span` with no click handler, and the new assignment button, edit, delete, add pictures, remove picture and the admin gear are not rendered at all.
+- The server is the real gate. `authorise()` compares the caller's id and password against the logins on the board, not against anything the caller claims about itself, and `/api/action` answers 403 for `saveBoard`, `saveConfig` and `saveAccounts` from anyone else. Hiding a button is a courtesy; this is the protection.
+- A refused save raises a standing alert rather than a toast, because the edited card stays on screen looking saved. It clears when a write lands or on sign out, so a student never inherits an admin's warning.
+
+### Real time
+
+- The doorbell, not a data channel. After a successful write the server broadcasts `{what, at}` on the `class-board` channel and nothing else, then every browser re-reads `/api/state` where the access rules live. No board data and no login travels on the socket.
+- That is why the publishable key is enough. If it is missing, `openRealtime` returns early and the 12 second poll carries the update on its own, so a missing key costs the instant update and nothing else.
+- The channel needs no table policy, because nothing is read off Postgres changes. Row level security stays on with no policies.
+
+### Rules that matter
+
+- The board is uploaded and downloaded as a whole, so an admin deleting an assignment posts the shorter board and every other device adopts it.
 - Uploads are skipped when the local state already matches what the server sent, so two tabs cannot bounce the board back and forth. The guard is a fingerprint of ids, timestamps, status, titles and picture counts, which avoids stringifying megabytes of picture data.
 - Accounts and the class code travel with it, so one login and one code cover both sites.
 - If `/api` does not answer, the organizer silently keeps using localStorage and the quiz falls back to the default class code. A failed fetch is caught, never thrown.
-- **Passwords are still plain text**, now in the shared document as well as in localStorage. Anyone who can read the Supabase project can read the class logins.
+- **Passwords stay plain text in the row**, because the server needs them to check who may write. They are stripped on the way out of `/api/state` by `publicState`, so the endpoint no longer publishes the class logins. The side effect is that a device with no local copy cannot verify a returning student's password, so the sign in form refuses it and says so instead of guessing.
 
-To switch it on: create a free Supabase project, run `supabase/schema.sql` in its SQL editor, then set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the Vercel project and redeploy. Until then the API reports offline and both apps behave exactly as before.
+To switch it on: create a free Supabase project, run `supabase/schema.sql` in its SQL editor, set `SUPABASE_URL` plus `SUPABASE_SECRET_KEY` and `SUPABASE_PUBLISHABLE_KEY` in the Vercel project, then redeploy. Until then the API reports offline and both apps behave exactly as before.
 
 ## 11. The college quiz site
 
