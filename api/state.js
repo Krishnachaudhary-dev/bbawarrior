@@ -1,4 +1,4 @@
-import { describeError, isConfigured, keyRoleHint, readState, realtimeConfig, secretKey } from './_db.js';
+import { describeError, isConfigured, keyRoleHint, publicState, readState, realtimeConfig, secretKey } from './_db.js';
 
 /**
  * GET /api/state
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
   try {
     const state = await readState();
     res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ ok: true, ...state, syncedAt: Date.now(), realtime: realtimeConfig() });
+    return res.status(200).json({ ok: true, ...publicState(state), syncedAt: Date.now(), realtime: realtimeConfig() });
   } catch (err) {
     /* The browser gets a plain sentence, the Vercel log gets the actual failure
        plus which variable the key came from and what kind of key it is. A 401

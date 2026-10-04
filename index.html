@@ -361,7 +361,10 @@
       return {
         id: raw.id ? String(raw.id) : uid(),
         username,
-        password: typeof raw.password === "string" && raw.password ? raw.password : DEFAULT_PASSWORD,
+        /* A blank here means the shared board is not sharing a secret for this login,
+           which is how the server publishes it now. Defaulting it would hand every
+           classmate the same password, so an absent secret stays absent. */
+        password: typeof raw.password === "string" ? raw.password : "",
         role: raw.role === "admin" ? "admin" : "student",
         createdAt: raw.createdAt ? Number(raw.createdAt) : Date.now(),
         lastSeen: raw.lastSeen ? Number(raw.lastSeen) : 0,
@@ -3805,6 +3808,13 @@
             return { ok: false, reason: "This device has no class logins yet. Create one with the class code." };
           }
           return { ok: false, reason: "No login called " + username + " is saved on this device." };
+        }
+        if (!found.password) {
+          return {
+            ok: false,
+            reason:
+              "This login has no password on this device, because the class board no longer shares passwords. Ask your admin to set one, or join again with the class code.",
+          };
         }
         if (found.password !== password) {
           return {

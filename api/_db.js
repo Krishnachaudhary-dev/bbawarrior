@@ -250,6 +250,23 @@ export async function readState() {
   return data ? { ...EMPTY, ...data.data } : { ...EMPTY };
 }
 
+/** What the browser is allowed to see. The shared document keeps passwords so an
+    admin can sign in again on a new device, but publishing them would hand every
+    login in the class to anyone who opened /api/state, so they stop here. */
+export function publicState(state) {
+  const src = state && typeof state === 'object' ? state : {};
+  const accounts = Array.isArray(src.accounts) ? src.accounts : [];
+  return {
+    ...src,
+    accounts: accounts.map((account) => {
+      if (!account || typeof account !== 'object') return account;
+      const clean = { ...account };
+      delete clean.password;
+      return clean;
+    }),
+  };
+}
+
 /** Replaces the document. An admin deleting an assignment lands here for everyone. */
 export async function writeState(next) {
   if (!isConfigured()) return false;
