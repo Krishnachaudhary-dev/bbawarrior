@@ -148,27 +148,27 @@
     };
 
     const DEFAULT_SUBJECTS = [
-      "Financial Management",
-      "Marketing Management",
-      "Organizational Behavior",
-      "Business Communication",
-      "Management Information Systems",
-      "Business Law",
-      "Quantitative Methods",
-      "Strategic Management",
+      "Business Economics",
+      "General Proficiency",
+      "Indian Knowledge System",
+      "Environmental Science and Sustainability",
+      "Communication Lab",
+      "Financial Accounting",
+      "Principles and Practices of Management",
+      "Business Communication - I",
     ];
 
     /* Subjects carry a single dot colour. The chip itself stays neutral so the
        page keeps one accent language instead of a rainbow of pastel badges. */
     const SUBJECT_DOTS = {
-      "Financial Management": "bg-indigo-500",
-      "Marketing Management": "bg-rose-500",
-      "Organizational Behavior": "bg-violet-500",
-      "Business Communication": "bg-sky-500",
-      "Management Information Systems": "bg-cyan-500",
-      "Business Law": "bg-amber-500",
-      "Quantitative Methods": "bg-teal-500",
-      "Strategic Management": "bg-orange-500",
+      "Business Economics": "bg-indigo-500",
+      "General Proficiency": "bg-rose-500",
+      "Indian Knowledge System": "bg-violet-500",
+      "Environmental Science and Sustainability": "bg-sky-500",
+      "Communication Lab": "bg-cyan-500",
+      "Financial Accounting": "bg-amber-500",
+      "Principles and Practices of Management": "bg-teal-500",
+      "Business Communication - I": "bg-orange-500",
     };
     const subjectDot = (subject) => SUBJECT_DOTS[subject] || "bg-slate-400 dark:bg-slate-500";
 
@@ -232,7 +232,7 @@
     const SEED = [
       {
         id: "seed-1",
-        subject: "Financial Management",
+        subject: "Financial Accounting",
         title: "Ratio Analysis: Walmart vs. Target",
         description:
           "Compute liquidity, leverage and profitability ratios for both retailers from their latest filings, then write a 400-word comparison of how efficiently each firm manages working capital.",
@@ -244,7 +244,7 @@
       },
       {
         id: "seed-2",
-        subject: "Organizational Behavior",
+        subject: "Principles and Practices of Management",
         title: "Case Study: Communication Breakdown on the Assembly Line",
         description:
           "Identify the structural and behavioural causes of the production delay, map each cause to a communication model from class, and recommend two corrective actions.",
@@ -256,7 +256,7 @@
       },
       {
         id: "seed-3",
-        subject: "Business Law",
+        subject: "General Proficiency",
         title: "Contract Validity Problem Set (Offer, Acceptance, Consideration)",
         description:
           "Answer the six hypotheticals on offer, acceptance and consideration, citing the governing principle for every conclusion in IRAC form.",
@@ -268,7 +268,7 @@
       },
       {
         id: "seed-4",
-        subject: "Business Communication",
+        subject: "Business Communication - I",
         title: "Formal Memo: Remote Work Policy Change",
         description:
           "Draft a one-page block memo from the HR Director to all staff announcing the hybrid policy effective 1 November, including rationale, expectations and next steps.",
@@ -280,7 +280,7 @@
       },
       {
         id: "seed-5",
-        subject: "Management Information Systems",
+        subject: "Business Economics",
         title: "ERP Selection Report: SAP vs. Oracle vs. Dynamics",
         description:
           "Score three ERP vendors on a weighted decision matrix for a mid-sized manufacturer and justify the recommendation in a two page report.",
@@ -292,7 +292,7 @@
       },
       {
         id: "seed-6",
-        subject: "Quantitative Methods",
+        subject: "General Proficiency",
         title: "Linear Programming: Production Mix (Exercise Set 4)",
         description:
           "Formulate the production mix LP, solve it with the simplex method, and interpret the shadow prices for both constraints.",
@@ -304,7 +304,7 @@
       },
       {
         id: "seed-7",
-        subject: "Marketing Management",
+        subject: "Business Economics",
         title: "STP Analysis of Nespresso",
         description:
           "Segment the at-home coffee market, define the target segment Nespresso serves, and write a positioning statement supported by evidence from the case.",
@@ -315,7 +315,7 @@
       },
       {
         id: "seed-8",
-        subject: "Strategic Management",
+        subject: "Environmental Science and Sustainability",
         title: "Persuasive Pitch: Campus Sustainability Fee",
         description:
           "Build a five slide persuasive argument for or against a $50 per semester sustainability fee, using one concession and refute move.",
@@ -3066,6 +3066,7 @@
       notify, onSignOut, onSaveOwnPassword, onAddAccount, onRenameAccount, onSetRole,
       onSetAccountPassword, onDeleteAccount, onClassCode,
       onAddSubject, onRenameSubject, onDeleteSubject, onImport, onThemeChange,
+      saveError, onDismissSaveError,
     }) {
       const [query, setQuery] = useState("");
       const [subject, setSubject] = useState("all");
@@ -3269,6 +3270,36 @@
                 </div>
               </div>
             </header>
+
+            {/* A save the server would not take. Deliberately persistent rather than a
+                toast, because the edit behind it is still sitting on screen looking
+                saved, and that is the exact mistake worth making impossible. */}
+            {saveError && account && account.role === "admin" && (
+              <div className="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  className="flex items-start gap-3 rounded-2xl border border-rose-200/80 bg-rose-50/70 px-4 py-3 text-sm text-rose-900 shadow-card backdrop-blur-xl dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+                >
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">
+                    <CircleAlert size={13} strokeWidth={3} />
+                  </span>
+                  <p className="min-w-0 flex-1 leading-relaxed">
+                    <span className="font-semibold">Not saved to the class board.</span>{" "}
+                    {saveError} Everything on screen is still only in this browser, so no one else can
+                    see it yet.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onDismissSaveError}
+                    aria-label="Dismiss the unsaved warning"
+                    className="shrink-0 rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-100 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              </div>
+            )}
 
             <main className="mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 lg:px-8">
               <section className="grid gap-3 sm:grid-cols-3 sm:gap-4">
@@ -3533,6 +3564,10 @@
       const lastRemoteItems = useRef("");
       const lastRemoteAccounts = useRef("");
       const syncRef = useRef(null);
+      /* Set when the server refuses a save, cleared when one lands. It has to
+         outlive the toast: a refused edit is still on screen, so without a warning
+         that stays put it looks exactly like an edit that saved. */
+      const [saveError, setSaveError] = useState(null);
 
       /* The role rule, in one place: an admin writes to the shared board, everyone
          else reads it. The server checks this too, so hiding a button is a courtesy
@@ -3545,7 +3580,14 @@
       const upload = (type, payload) => {
         if (!account) return;
         remotePush(type, payload, { id: account.id, password: account.password }).then((result) => {
-          if (!result.ok && result.reason) notify(result.reason, "danger");
+          if (result.ok) {
+            /* A save that lands means the board is current again. */
+            setSaveError(null);
+            return;
+          }
+          const reason = result.reason || "The class board did not accept that change.";
+          setSaveError(reason);
+          notify(reason, "danger");
         });
       };
       const [items, setItems] = useState(loadItems);
@@ -3666,6 +3708,14 @@
         if (found) setAccount(found);
         else clearSession();
       }, [config.accounts]);
+
+      /* The refused-save warning belongs to whoever hit the refusal. Tying it to the
+         login id rather than the account object means it clears on every handover,
+         including a sign out that did not come through signOut, and it survives the
+         harmless account object swap that a password change causes. */
+      useEffect(() => {
+        setSaveError(null);
+      }, [account ? account.id : null]);
 
       /* Another tab on this origin, or the college quiz site, can add an account,
          reset a password or sign out. Without this the sign in form keeps working
@@ -4003,6 +4053,8 @@
               onDeleteSubject={deleteSubject}
               onImport={importBackup}
               onThemeChange={changeTheme}
+              saveError={saveError}
+              onDismissSaveError={() => setSaveError(null)}
             />
           ) : gate === "admin" ? (
             <AdminSignIn onSignIn={signIn} onLeave={openClassGate} />
