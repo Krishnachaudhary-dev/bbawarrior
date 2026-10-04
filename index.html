@@ -469,8 +469,19 @@
 
     function accountsFingerprint(accounts) {
       return (accounts || [])
-        .map((a) => [a.id, a.username, a.password, a.role, a.lastSeen || 0].join(":"))
+        .map((a) => [a.id, a.username, a.role, a.lastSeen || 0].join(":"))
         .join("|");
+    }
+
+    /* The server stopped publishing passwords, so every account arriving from
+       /api/state has none. Carrying over the secret this device already trusts is
+       what keeps a returning admin able to sign in, and stops each poll from
+       replacing a working login with a blank one. */
+    function keepLocalSecrets(remote, local) {
+      return (remote || []).map((account) => {
+        const known = (local || []).find((a) => String(a.id) === String(account.id));
+        return known && known.password ? { ...account, password: known.password } : account;
+      });
     }
 
     function itemsFingerprint(items) {
@@ -3645,15 +3656,16 @@
             ? state.accounts.map(normaliseAccount).filter(Boolean)
             : [];
           if (remoteAccounts.length) {
-            lastRemoteAccounts.current = accountsFingerprint(remoteAccounts);
-            setConfig((current) =>
-              normaliseConfig({
+            setConfig((current) => {
+              const merged = keepLocalSecrets(remoteAccounts, current.accounts);
+              lastRemoteAccounts.current = accountsFingerprint(merged);
+              return normaliseConfig({
                 subjects: (state.config && state.config.subjects) || current.subjects,
                 theme: current.theme,
                 classCode: (state.config && state.config.classCode) || current.classCode,
-                accounts: remoteAccounts,
-              })
-            );
+                accounts: merged,
+              });
+            });
           }
           /* Once the board answers, open the doorbell so an admin save shows up here
              at once rather than at the next poll. */
@@ -3685,11 +3697,12 @@
           ? state.accounts.map(normaliseAccount).filter(Boolean)
           : [];
         if (remoteAccounts.length) {
-          const afp = accountsFingerprint(remoteAccounts);
           setConfig((current) => {
+            const merged = keepLocalSecrets(remoteAccounts, current.accounts);
+            const afp = accountsFingerprint(merged);
             if (accountsFingerprint(current.accounts) === afp) return current;
             lastRemoteAccounts.current = afp;
-            return normaliseConfig({ ...current, accounts: remoteAccounts });
+            return normaliseConfig({ ...current, accounts: merged });
           });
         }
       };
