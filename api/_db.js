@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
 /**
  * The one place that talks to Supabase. Only these serverless functions ever hold
@@ -267,10 +268,73 @@ export function publicState(state) {
   };
 }
 
+/* ---- password storage ---------------------------------------------------
+   A password is hashed here and nowhere else, so a row that reaches Supabase
+   never holds one that can be read back. scrypt comes from node:crypto, which
+   means there is no dependency to install and nothing to keep up to date. */
+
+const SCRYPT = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+const PREFIX = 'scrypt$';
+
+/** Hashes a password for storage. The salt is per password, so two identical
+    passwords do not produce identical rows. */
+export function hashPassword(plain) {
+  const salt = randomBytes(16);
+  const hash = scryptSync(String(plain), salt, 64, SCRYPT);
+  return PREFIX + salt.toString('base64') + '$' + hash.toString('base64');
+}
+
+export function isHashed(stored) {
+  return typeof stored === 'string' && stored.indexOf(PREFIX) === 0;
+}
+
+/** Checks a typed password against what is stored. Accepts a hash, and also a
+    plain value, because a board that predates this change still holds those and
+    has to keep working until it is migrated. */
+export function verifyPassword(stored, typed) {
+  if (typeof stored !== 'string' || !stored) return false;
+  if (!isHashed(stored)) return sameSecret(stored, typed);
+  const parts = stored.split('$');
+  if (parts.length !== 3) return false;
+  try {
+    const salt = Buffer.from(parts[1], 'base64');
+    const expected = Buffer.from(parts[2], 'base64');
+    const actual = scryptSync(String(typed), salt, expected.length, SCRYPT);
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
+  } catch (err) {
+    return false;
+  }
+}
+
+/** Replaces any plain password with a hash, leaving hashed ones and accounts with
+    no password alone. Runs on every write, so nothing readable can reach the row
+    even if a caller forgets. */
+export function withHashedSecrets(state) {
+  const src = state && typeof state === 'object' ? state : {};
+  const accounts = Array.isArray(src.accounts) ? src.accounts : [];
+  return {
+    ...src,
+    accounts: accounts.map((account) => {
+      if (!account || typeof account !== 'object') return account;
+      if (typeof account.password !== 'string' || !account.password) return account;
+      if (isHashed(account.password)) return account;
+      return { ...account, password: hashPassword(account.password) };
+    }),
+  };
+}
+
+/** How many accounts still hold a plain password, so the migration can report it. */
+export function countPlainPasswords(state) {
+  const accounts = (state && state.accounts) || [];
+  return accounts.filter((a) => a && typeof a.password === 'string' && a.password && !isHashed(a.password)).length;
+}
+
 /** Replaces the document. An admin deleting an assignment lands here for everyone. */
 export async function writeState(next) {
   if (!isConfigured()) return false;
-  const { error } = await client().from(TABLE).upsert({ id: ROW_ID, data: next, updated_at: new Date().toISOString() });
+  const { error } = await client()
+    .from(TABLE)
+    .upsert({ id: ROW_ID, data: withHashedSecrets(next), updated_at: new Date().toISOString() });
   if (error) throw error;
   return true;
 }
@@ -307,7 +371,7 @@ export async function authorise(claims, needAdmin = true) {
   const accounts = Array.isArray(state.accounts) ? state.accounts : [];
   const found = accounts.find((a) => String(a.id) === String(claims.id));
   if (!found) return { ok: false, reason: 'That login is not on this board any more.' };
-  if (!sameSecret(found.password, claims.password)) return { ok: false, reason: 'That password is not right.' };
+  if (!verifyPassword(found.password, claims.password)) return { ok: false, reason: 'That password is not right.' };
   if (needAdmin && found.role !== 'admin') return { ok: false, reason: 'Only the admin can change the board.' };
 
   return { ok: true, account: found };

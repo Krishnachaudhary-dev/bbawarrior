@@ -1,4 +1,4 @@
-import { appendAttendance, authorise, broadcastChange, describeError, isConfigured, readState, writeState } from './_db.js';
+import { appendAttendance, authorise, broadcastChange, countPlainPasswords, describeError, isConfigured, readState, writeState } from './_db.js';
 
 /**
  * POST /api/action
@@ -19,7 +19,7 @@ import { appendAttendance, authorise, broadcastChange, describeError, isConfigur
  * device adopts it on its next sync.
  */
 
-const ADMIN_ONLY = new Set(['saveBoard', 'saveConfig', 'saveAccounts']);
+const ADMIN_ONLY = new Set(['saveBoard', 'saveConfig', 'saveAccounts', 'hashPasswords']);
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -33,8 +33,44 @@ export default async function handler(req, res) {
 
   const { type, payload, account } = req.body || {};
   if (!type) return res.status(400).json({ ok: false, reason: 'Missing action type.' });
-  if (!ADMIN_ONLY.has(type) && type !== 'attendance' && type !== 'checkLogin') {
+  if (!ADMIN_ONLY.has(type) && type !== 'attendance' && type !== 'checkLogin' && type !== 'enrol') {
     return res.status(400).json({ ok: false, reason: `Unknown action "${type}".` });
+  }
+
+  if (type === 'enrol') {
+    /* A classmate joining with the class code. There is no account to check yet,
+       so the code is the whole gate. The password is hashed on the way into the
+       row by writeState and is never echoed back here. */
+    const name = String((payload && payload.username) || '').replace(/\s+/g, ' ').trim();
+    const pass = String((payload && payload.password) || '');
+    if (name.length < 2 || name.length > 24) {
+      return res.status(400).json({ ok: false, reason: 'Usernames need 2 to 24 characters.' });
+    }
+    if (pass.length < 4) {
+      return res.status(400).json({ ok: false, reason: 'Use at least 4 characters for a password.' });
+    }
+    const state = (await readState()) || {};
+    const code = String((state.config && state.config.classCode) || '');
+    const given = String((payload && payload.code) || '').trim().toLowerCase();
+    if (!code || given !== code.trim().toLowerCase()) {
+      return res.status(403).json({ ok: false, reason: 'That class code is not right.' });
+    }
+    const accounts = Array.isArray(state.accounts) ? state.accounts : [];
+    if (accounts.some((a) => String(a.username || '').toLowerCase() === name.toLowerCase())) {
+      return res.status(400).json({ ok: false, reason: 'That username is already taken.' });
+    }
+    const fresh = {
+      id: 'a-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
+      username: name,
+      password: pass,
+      role: 'student',
+      createdAt: Date.now(),
+      lastSeen: Date.now(),
+    };
+    await writeState({ ...state, accounts: [...accounts, fresh] });
+    await broadcastChange('enrol');
+    const { password, ...safe } = fresh;
+    return res.status(200).json({ ok: true, account: safe });
   }
 
   try {
@@ -62,6 +98,16 @@ export default async function handler(req, res) {
           lastSeen: verdict.account.lastSeen,
         },
       });
+    }
+
+    if (type === 'hashPasswords') {
+      /* The one-time migration. writeState hashes on the way in, so simply saving
+         the document back is what upgrades it. Admin only, and safe to repeat. */
+      const state = (await readState()) || {};
+      const before = countPlainPasswords(state);
+      await writeState(state);
+      const after = (await readState()) || {};
+      return res.status(200).json({ ok: true, upgraded: before, remaining: countPlainPasswords(after) });
     }
 
     if (type === 'attendance') {
