@@ -323,6 +323,31 @@ export function withHashedSecrets(state) {
   };
 }
 
+/**
+ * Merges the account list a browser sent with the one already stored, keeping every
+ * secret the board holds.
+ *
+ * Since the board stopped publishing passwords, an account arriving from any other
+ * device, or enrolled by a classmate, carries no password at all, and one this
+ * device never held a copy of arrives blank. A blank therefore means "nothing to say
+ * about this one", not "remove the secret", so the stored value is carried across.
+ * Without this, an admin adding, renaming or repromoting any login would post a list
+ * full of blanks and erase every password on the board, and with hashing in place
+ * there would be no way back to the originals. Removing a login is still a delete:
+ * an account missing from the incoming list is gone, as it always was.
+ */
+export function keepStoredSecrets(incoming, stored) {
+  const list = Array.isArray(incoming) ? incoming : [];
+  const existing = Array.isArray(stored) ? stored : [];
+  return list.map((account) => {
+    if (!account || typeof account !== 'object') return account;
+    if (typeof account.password === 'string' && account.password) return account;
+    const known = existing.find((a) => a && String(a.id) === String(account.id));
+    if (!known || typeof known.password !== 'string' || !known.password) return account;
+    return { ...account, password: known.password };
+  });
+}
+
 /** How many accounts still hold a plain password, so the migration can report it. */
 export function countPlainPasswords(state) {
   const accounts = (state && state.accounts) || [];

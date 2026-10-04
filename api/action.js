@@ -1,4 +1,4 @@
-import { appendAttendance, authorise, broadcastChange, countPlainPasswords, describeError, isConfigured, readState, writeState } from './_db.js';
+import { appendAttendance, authorise, broadcastChange, countPlainPasswords, describeError, isConfigured, keepStoredSecrets, readState, writeState } from './_db.js';
 
 /**
  * POST /api/action
@@ -6,7 +6,7 @@ import { appendAttendance, authorise, broadcastChange, countPlainPasswords, desc
  *
  *   saveBoard    { items }            the whole board, so a delete removes it everywhere
  *   saveConfig   { config }           class code and subjects
- *   saveAccounts { accounts }         the class logins
+ *   saveAccounts { accounts }         the class logins, blank passwords kept as they are
  *   attendance   { name, mode, at }   someone opened the quiz
  *
  * The first three belong to an admin and are refused for anyone else, checked
@@ -121,7 +121,10 @@ export default async function handler(req, res) {
 
     if (type === 'saveBoard') next.items = Array.isArray(payload) ? payload : [];
     else if (type === 'saveConfig') next.config = { ...(state.config || {}), ...(payload || {}) };
-    else if (type === 'saveAccounts') next.accounts = Array.isArray(payload) ? payload : [];
+    /* An account the sender has no password for arrives blank, because the board
+       publishes no secrets. Those blanks keep whatever the board already holds, so
+       one device's missing copy cannot erase a classmate's login. */
+    else if (type === 'saveAccounts') next.accounts = keepStoredSecrets(payload, state.accounts);
 
     await writeState(next);
     /* Everyone else is told to come and look, without being told what changed. */
