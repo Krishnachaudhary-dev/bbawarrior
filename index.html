@@ -531,8 +531,13 @@
         body: JSON.stringify({ type, payload, account: account || null }),
       });
       /* The body is read whatever the status was, so a refusal from the server can
-         be shown instead of vanishing. */
-      return data && data.ok ? { ok: true } : { ok: false, reason: (data && data.reason) || "The server did not accept that change." };
+         be shown instead of vanishing. A request that never arrived is not a
+         refusal though, and the two have to stay apart: an alert that says a save
+         was turned down would be lying about a dropped connection. */
+      if (!data) return { ok: false, offline: true, reason: "No connection to the class board." };
+      return data.ok
+        ? { ok: true, offline: false }
+        : { ok: false, offline: false, reason: data.reason || "The server did not accept that change." };
     }
 
     /* Supabase Realtime, used only as a doorbell. The browser subscribes with the
@@ -558,7 +563,12 @@
     /* Confirms a password the visitor typed against the copy that lives on the board.
        The secret is checked where it is stored, so a device with no local copy, or one
        whose copy went stale, can still get in without /api/state handing over a
-       password. Returns the account fields to remember, never the stored secret. */
+       password.
+
+       Three answers rather than two, because a caller must never confuse a board that
+       said no with a board that could not be reached: agreeing, with the fields worth
+       remembering and never the stored secret; refusing, with its own reason; or not
+       answering at all. */
     async function verifyLogin(claims, adminOnly) {
       const data = await remoteRequest("/action", {
         method: "POST",
@@ -568,7 +578,11 @@
           account: claims || null,
         }),
       });
-      return data && data.ok && data.account ? data.account : null;
+      if (!data) return { ok: false, offline: true, reason: "The class board did not answer." };
+      if (!data.ok || !data.account) {
+        return { ok: false, offline: false, reason: data.reason || "That password is not right." };
+      }
+      return { ok: true, offline: false, account: data.account };
     }
 
     function adminGateUrl() {
@@ -1297,6 +1311,7 @@
       const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
       const [errors, setErrors] = useState({});
       const [done, setDone] = useState(false);
+      const [busy, setBusy] = useState(false);
       const [reveal, setReveal] = useState(false);
 
       useEffect(() => {
@@ -1304,17 +1319,20 @@
         setPw({ current: "", next: "", confirm: "" });
         setErrors({});
         setDone(false);
+        setBusy(false);
       }, [open]);
 
       if (!open || !account) return null;
 
       const role = ROLE_META[account.role] || ROLE_META.student;
 
-      function submit(event) {
+      /* The current password is checked against the board, so this still works on a
+         device whose saved copy has drifted. onChangePassword answers with a promise
+         and a reason, because the board has to be asked before anything is written. */
+      async function submit(event) {
         event.preventDefault();
         const found = {};
         if (!pw.current) found.current = "Enter your current password.";
-        else if (pw.current !== account.password) found.current = "That is not your current password.";
         if (!pw.next) found.next = "Choose a new password.";
         else if (pw.next.length < 4) found.next = "Use at least 4 characters.";
         else if (pw.next === pw.current) found.next = "Pick something different.";
@@ -1324,12 +1342,16 @@
         setDone(false);
         if (Object.keys(found).length) return;
 
-        if (onChangePassword(pw.next)) {
-          setPw({ current: "", next: "", confirm: "" });
-          setDone(true);
-        } else {
-          setErrors({ current: "Could not save. Browser storage is unavailable." });
+        setBusy(true);
+        const result = await onChangePassword(pw.current, pw.next);
+        setBusy(false);
+
+        if (!result || !result.ok) {
+          setErrors({ current: (result && result.reason) || "Could not save that password." });
+          return;
         }
+        setPw({ current: "", next: "", confirm: "" });
+        setDone(true);
       }
 
       return (
@@ -1416,9 +1438,9 @@
                 <LogOut size={15} />
                 Sign out
               </button>
-              <button type="submit" className={BTN_PRIMARY}>
+              <button type="submit" disabled={busy} className={BTN_PRIMARY + " disabled:cursor-not-allowed disabled:opacity-60"}>
                 <KeyRound size={16} />
-                Save password
+                {busy ? "Checking with the board" : "Save password"}
               </button>
             </div>
           </form>
@@ -2663,13 +2685,14 @@
 
     function SettingsModal({
       open, onClose, config, account, items, subjects,
-      onSaveOwnPassword, onAddAccount, onRenameAccount, onSetRole, onSetAccountPassword, onDeleteAccount, onClassCode,
+      onChangePassword, onAddAccount, onRenameAccount, onSetRole, onSetAccountPassword, onDeleteAccount, onClassCode,
       onAddSubject, onRenameSubject, onDeleteSubject, onImport,
     }) {
       const [tab, setTab] = useState("password");
       const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
       const [pwErrors, setPwErrors] = useState({});
       const [saved, setSaved] = useState(false);
+      const [pwBusy, setPwBusy] = useState(false);
       const [reveal, setReveal] = useState(false);
       const [newSubject, setNewSubject] = useState("");
       const [editing, setEditing] = useState(null);
@@ -2685,6 +2708,7 @@
         setPw({ current: "", next: "", confirm: "" });
         setPwErrors({});
         setSaved(false);
+        setPwBusy(false);
         setReveal(false);
         setNewSubject("");
         setEditing(null);
@@ -2697,27 +2721,34 @@
 
       const usageCount = (name) => items.filter((i) => i.subject === name).length;
 
-      function savePassword(event) {
+      /* The board is asked whether the current password is right, then the new one is
+         written with the credential the board agreed to. Comparing against the copy
+         this device holds is what made this refuse a change on a device that had
+         drifted away from the board. */
+      async function savePassword(event) {
         event.preventDefault();
         const found = {};
         if (!pw.current) found.current = "Enter your current password.";
-        else if (pw.current !== account.password) found.current = "That is not your current password.";
         if (!pw.next) found.next = "Choose a new password.";
         else if (pw.next.length < 4) found.next = "Use at least 4 characters.";
-        else if (pw.next === account.password) found.next = "Pick something different from the current password.";
+        else if (pw.next === pw.current) found.next = "Pick something different from the current password.";
         if (pw.confirm !== pw.next) found.confirm = "The two passwords do not match.";
 
         setPwErrors(found);
         setSaved(false);
         if (Object.keys(found).length) return;
 
-        if (onSaveOwnPassword(pw.next)) {
-          setPw({ current: "", next: "", confirm: "" });
-          setSaved(true);
-          setTimeout(() => setSaved(false), 5000);
-        } else {
-          setPwErrors({ current: "Could not save. Browser storage is unavailable." });
+        setPwBusy(true);
+        const result = await onChangePassword(pw.current, pw.next);
+        setPwBusy(false);
+
+        if (!result || !result.ok) {
+          setPwErrors({ current: (result && result.reason) || "Could not save that password." });
+          return;
         }
+        setPw({ current: "", next: "", confirm: "" });
+        setSaved(true);
+        setTimeout(() => setSaved(false), 5000);
       }
 
       function addSubject(event) {
@@ -2867,9 +2898,9 @@
               )}
 
               <div className="flex justify-end gap-2 border-t border-slate-200/80 pt-4 sm:col-span-2 dark:border-slate-800">
-                <button type="submit" className={BTN_PRIMARY}>
+                <button type="submit" disabled={pwBusy} className={BTN_PRIMARY + " disabled:cursor-not-allowed disabled:opacity-60"}>
                   <KeyRound size={15} />
-                  Save password
+                  {pwBusy ? "Checking with the board" : "Save password"}
                 </button>
               </div>
             </form>
@@ -3099,10 +3130,10 @@
       items, subjects, config, theme, account,
       onAdd, onUpdate, onCycleStatus, onDelete, onEnsureSubject,
       onAddPictures, onRemovePicture,
-      notify, onSignOut, onSaveOwnPassword, onAddAccount, onRenameAccount, onSetRole,
+      notify, onSignOut, onChangePassword, onAddAccount, onRenameAccount, onSetRole,
       onSetAccountPassword, onDeleteAccount, onClassCode,
       onAddSubject, onRenameSubject, onDeleteSubject, onImport, onThemeChange,
-      saveError, onDismissSaveError,
+      saveError, onDismissSaveError, onReverifyDevice,
     }) {
       const [query, setQuery] = useState("");
       const [subject, setSubject] = useState("all");
@@ -3325,14 +3356,26 @@
                     {saveError} Everything on screen is still only in this browser, so no one else can
                     see it yet.
                   </p>
-                  <button
-                    type="button"
-                    onClick={onDismissSaveError}
-                    aria-label="Dismiss the unsaved warning"
-                    className="shrink-0 rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-100 dark:text-rose-300 dark:hover:bg-rose-500/15"
-                  >
-                    <X size={15} />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {/* A refused save is often a device holding a password the board
+                        has moved on from, and that has a repair: drop the local copy
+                        and let the sign in screen ask the board instead. */}
+                    <button
+                      type="button"
+                      onClick={onReverifyDevice}
+                      className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 dark:text-rose-200 dark:hover:bg-rose-500/20"
+                    >
+                      Re-verify this device
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onDismissSaveError}
+                      aria-label="Dismiss the unsaved warning"
+                      className="shrink-0 rounded-lg p-1.5 text-rose-600 transition hover:bg-rose-100 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -3511,7 +3554,7 @@
             account={account}
             items={items}
             subjects={subjects}
-            onSaveOwnPassword={onSaveOwnPassword}
+            onChangePassword={onChangePassword}
             onAddAccount={onAddAccount}
             onRenameAccount={onRenameAccount}
             onSetRole={onSetRole}
@@ -3528,10 +3571,10 @@
             open={accountOpen}
             onClose={() => setAccountOpen(false)}
             account={account}
-            onChangePassword={(next) => {
-              const ok = onSaveOwnPassword(next);
-              if (ok) notify("Password updated");
-              return ok;
+            onChangePassword={async (current, next) => {
+              const result = await onChangePassword(current, next);
+              if (result && result.ok) notify("Password updated");
+              return result;
             }}
             onSignOut={() => {
               setAccountOpen(false);
@@ -3613,12 +3656,22 @@
       /* Every write carries the signed in admin's credentials, because the server
          verifies them. A refusal is surfaced instead of swallowed, so a rejected
          change is never mistaken for a saved one. */
-      const upload = (type, payload) => {
+      const upload = (type, payload, creds) => {
         if (!account) return;
-        remotePush(type, payload, { id: account.id, password: account.password }).then((result) => {
+        /* creds lets one write authenticate with a password the board has just agreed
+           to, rather than the copy this device happens to be holding, which is what
+           lets a change land on a device whose copy had drifted. */
+        remotePush(type, payload, creds || { id: account.id, password: account.password }).then((result) => {
           if (result.ok) {
             /* A save that lands means the board is current again. */
             setSaveError(null);
+            return;
+          }
+          if (result.offline) {
+            /* The change is still on this device and the board gets it when it
+               answers again, so this is worth saying once. It is not a refused
+               save and must not wear the warning that means one. */
+            notify(result.reason, "info");
             return;
           }
           const reason = result.reason || "The class board did not accept that change.";
@@ -3819,12 +3872,17 @@
         );
       }, [config.accounts, items]);
 
-      function commitAccounts(nextAccounts, extra) {
+      function commitAccounts(nextAccounts, extra, options) {
         const next = { ...config, accounts: nextAccounts, ...(extra || {}) };
         if (!commitConfig(next)) return false;
         setConfig(next);
-        if (remoteOn.current && isAdmin && accountsFingerprint(nextAccounts) !== lastRemoteAccounts.current) {
-          upload("saveAccounts", nextAccounts);
+        const opts = options || {};
+        /* force exists for a password, which accountsFingerprint deliberately ignores:
+           a change that touched nothing else would look like there was nothing to
+           send, and the board would go on holding the old secret. */
+        const changed = accountsFingerprint(nextAccounts) !== lastRemoteAccounts.current;
+        if (remoteOn.current && isAdmin && (opts.force || changed)) {
+          upload("saveAccounts", nextAccounts, opts.creds);
         }
         /* Keep the signed in copy in step, so a password change takes effect at once. */
         setAccount((current) => {
@@ -3847,16 +3905,15 @@
         if (!found.password) {
           /* No trusted copy here. The board still holds the real secret, so ask it
              rather than giving up, and remember the password only once it agrees. */
-          return verifyLogin({ id: found.id, password }, adminOnly).then((verified) => {
-            if (!verified) {
-              return {
-                ok: false,
-                reason: adminOnly
-                  ? "That admin login is not correct."
-                  : "That password is not right for " + found.username + ".",
-              };
+          return verifyLogin({ id: found.id, password }, adminOnly).then((verdict) => {
+            if (!verdict.ok) {
+              let reason;
+              if (verdict.offline) reason = "The class board did not answer, so this device cannot check that password.";
+              else if (adminOnly) reason = "That admin login is not correct.";
+              else reason = "That password is not right for " + found.username + ".";
+              return { ok: false, reason };
             }
-            const adopted = { ...found, ...verified, password, lastSeen: Date.now() };
+            const adopted = { ...found, ...verdict.account, password, lastSeen: Date.now() };
             commitAccounts(config.accounts.map((a) => (a.id === found.id ? adopted : a)));
             setAccount(adopted);
             saveSession(adopted);
@@ -3914,9 +3971,52 @@
         notify("Signed out", "info");
       }
 
-      function saveOwnPassword(next) {
-        if (!account) return false;
-        return commitAccounts(config.accounts.map((a) => (a.id === account.id ? { ...a, password: next } : a)));
+      /* The repair for a device whose saved password no longer matches the board. Every
+         write it makes will be refused, and the honest fix is to stop trusting the
+         copy this device is holding: drop it and the session, so the sign in screen
+         asks the board instead of comparing against something stale. Nothing is lost
+         doing it, because the password was never only here. */
+      function reverifyDevice() {
+        if (!account) return;
+        const next = {
+          ...config,
+          accounts: config.accounts.map((a) => (a.id === account.id ? { ...a, password: "" } : a)),
+        };
+        if (!commitConfig(next)) {
+          notify("This browser will not let go of the saved copy. Sign out, then sign in again.", "danger");
+          return;
+        }
+        setConfig(next);
+        setAccount(null);
+        clearSession();
+        setSaveError(null);
+        notify("Sign in again with the password the class board holds", "info");
+      }
+
+      /* Changes the signed in person's own password.
+
+         The current one is checked against the board rather than against the copy
+         this device happens to be holding, because that copy is exactly what drifts:
+         an admin who set the password elsewhere, or on another device, was told their
+         own password was wrong while the board accepted it, and had no way past it.
+
+         The write is then sent with the password the board just agreed to, and forced
+         out rather than left to the fingerprint, so it is authorised instead of
+         refused. With no board to ask there is nobody else who could say yes, so the
+         local copy decides, which is how this has always worked offline. */
+      async function changeOwnPassword(current, next) {
+        if (!account) return { ok: false, reason: "Sign in before changing a password." };
+        const verdict = await verifyLogin({ id: account.id, password: current }, account.role === "admin");
+        if (!verdict.ok && !verdict.offline) return { ok: false, reason: verdict.reason };
+        if (!verdict.ok && current !== account.password) {
+          return { ok: false, reason: "That is not your current password." };
+        }
+        const creds = verdict.ok ? { id: account.id, password: current } : null;
+        const nextAccounts = config.accounts.map((a) => (a.id === account.id ? { ...a, password: next } : a));
+        if (!commitAccounts(nextAccounts, undefined, { force: true, creds })) {
+          return { ok: false, reason: "Could not save. Browser storage is unavailable." };
+        }
+        return { ok: true };
       }
 
       function addAccount({ username, password, role }) {
@@ -3936,7 +4036,10 @@
       }
 
       function setAccountPassword(id, password) {
-        return commitAccounts(config.accounts.map((a) => (a.id === id ? { ...a, password } : a)));
+        /* A password leaves every field the fingerprint looks at untouched, so this
+           has to say so. Otherwise the reset looks like it worked on this device
+           while the board carries on with the old one. */
+        return commitAccounts(config.accounts.map((a) => (a.id === id ? { ...a, password } : a)), undefined, { force: true });
       }
 
       function deleteAccount(id) {
@@ -4098,7 +4201,7 @@
               onRemovePicture={removePicture}
               notify={notify}
               onSignOut={signOut}
-              onSaveOwnPassword={saveOwnPassword}
+              onChangePassword={changeOwnPassword}
               onAddAccount={addAccount}
               onRenameAccount={renameAccount}
               onSetRole={setAccountRole}
@@ -4112,6 +4215,7 @@
               onThemeChange={changeTheme}
               saveError={saveError}
               onDismissSaveError={() => setSaveError(null)}
+              onReverifyDevice={reverifyDevice}
             />
           ) : gate === "admin" ? (
             <AdminSignIn onSignIn={signIn} onLeave={openClassGate} />
