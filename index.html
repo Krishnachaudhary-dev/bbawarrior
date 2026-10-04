@@ -478,9 +478,16 @@
        what keeps a returning admin able to sign in, and stops each poll from
        replacing a working login with a blank one. */
     function keepLocalSecrets(remote, local) {
+      const mine = local || [];
+      const lower = (a) => String(a.username || "").replace(/\s+/g, " ").trim().toLowerCase();
       return (remote || []).map((account) => {
-        const known = (local || []).find((a) => String(a.id) === String(account.id));
-        return known && known.password ? { ...account, password: known.password } : account;
+        const known = mine.find((a) => String(a.id) === String(account.id));
+        /* A same name under a different id is the same person: a login created on a
+           device that could not reach the board while the board went on and made one
+           anyway. The board decides who exists, so its id wins, and the password typed
+           here is carried across. Without this one student is two logins for good. */
+        const twin = known || mine.find((a) => lower(a) === lower(account) && a.username);
+        return twin && twin.password ? { ...account, password: twin.password } : account;
       });
     }
 
@@ -604,6 +611,10 @@
       const data = await remoteRequest("/action", {
         method: "POST",
         body: JSON.stringify({ type: "enrol", payload: payload }),
+        /* A write gets longer than a read. Cutting this one off at four seconds meant
+           the account was made on the board and this device never heard about it,
+           which is how one student ended up with two logins. */
+        timeout: 10000,
       });
       if (!data) return { ok: false, offline: true, reason: "The class board did not answer." };
       if (!data.ok || !data.account) {
