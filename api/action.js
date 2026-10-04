@@ -33,7 +33,7 @@ export default async function handler(req, res) {
 
   const { type, payload, account } = req.body || {};
   if (!type) return res.status(400).json({ ok: false, reason: 'Missing action type.' });
-  if (!ADMIN_ONLY.has(type) && type !== 'attendance') {
+  if (!ADMIN_ONLY.has(type) && type !== 'attendance' && type !== 'checkLogin') {
     return res.status(400).json({ ok: false, reason: `Unknown action "${type}".` });
   }
 
@@ -41,6 +41,27 @@ export default async function handler(req, res) {
     const verdict = await authorise(account, ADMIN_ONLY.has(type));
     if (!verdict.ok) {
       return res.status(403).json({ ok: false, reason: verdict.reason });
+    }
+
+    if (type === 'checkLogin') {
+      /* Confirms a password the browser typed against the copy that lives on the board.
+         Nothing is written and nothing is broadcast. The caller already knows the
+         password, so the response carries only the fields it needs to remember. */
+      const adminOnly = Boolean(payload && payload.adminOnly);
+      const verdict = await authorise(account, adminOnly);
+      if (!verdict.ok) {
+        return res.status(403).json({ ok: false, reason: verdict.reason });
+      }
+      return res.status(200).json({
+        ok: true,
+        account: {
+          id: verdict.account.id,
+          username: verdict.account.username,
+          role: verdict.account.role,
+          createdAt: verdict.account.createdAt,
+          lastSeen: verdict.account.lastSeen,
+        },
+      });
     }
 
     if (type === 'attendance') {

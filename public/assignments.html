@@ -555,6 +555,22 @@
       }
     }
 
+    /* Confirms a password the visitor typed against the copy that lives on the board.
+       The secret is checked where it is stored, so a device with no local copy, or one
+       whose copy went stale, can still get in without /api/state handing over a
+       password. Returns the account fields to remember, never the stored secret. */
+    async function verifyLogin(claims, adminOnly) {
+      const data = await remoteRequest("/action", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "checkLogin",
+          payload: { adminOnly: Boolean(adminOnly) },
+          account: claims || null,
+        }),
+      });
+      return data && data.ok && data.account ? data.account : null;
+    }
+
     function adminGateUrl() {
       try {
         const url = new URL(window.location.href);
@@ -977,8 +993,11 @@
         const username = form.username.trim();
         if (!username) return fail("Enter your admin username.");
         if (!form.password) return fail("Enter your admin password.");
-        const result = onSignIn(username, form.password, { adminOnly: true });
-        if (!result.ok) return fail(result.reason);
+        /* Awaited because a password with no trusted copy here is checked against
+           the board over the network before it is accepted. */
+        Promise.resolve(onSignIn(username, form.password, { adminOnly: true })).then((result) => {
+          if (!result.ok) fail(result.reason);
+        });
       }
 
       return (
@@ -1131,11 +1150,14 @@
         if (!form.password) return fail("Enter your password.");
 
         if (mode === "signin") {
-          const result = onSignIn(username, form.password);
-          if (!result.ok) {
-            setEscape(result.action === "admin-gate");
-            return fail(result.reason);
-          }
+          /* Awaited because a password with no trusted copy here is checked against
+             the board over the network before it is accepted. */
+          Promise.resolve(onSignIn(username, form.password)).then((result) => {
+            if (!result.ok) {
+              setEscape(result.action === "admin-gate");
+              fail(result.reason);
+            }
+          });
           return;
         }
 
@@ -3823,11 +3845,23 @@
           return { ok: false, reason: "No login called " + username + " is saved on this device." };
         }
         if (!found.password) {
-          return {
-            ok: false,
-            reason:
-              "This login has no password on this device, because the class board no longer shares passwords. Ask your admin to set one, or join again with the class code.",
-          };
+          /* No trusted copy here. The board still holds the real secret, so ask it
+             rather than giving up, and remember the password only once it agrees. */
+          return verifyLogin({ id: found.id, password }, adminOnly).then((verified) => {
+            if (!verified) {
+              return {
+                ok: false,
+                reason: adminOnly
+                  ? "That admin login is not correct."
+                  : "That password is not right for " + found.username + ".",
+              };
+            }
+            const adopted = { ...found, ...verified, password, lastSeen: Date.now() };
+            commitAccounts(config.accounts.map((a) => (a.id === found.id ? adopted : a)));
+            setAccount(adopted);
+            saveSession(adopted);
+            return { ok: true };
+          });
         }
         if (found.password !== password) {
           return {
