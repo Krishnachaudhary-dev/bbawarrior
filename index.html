@@ -1953,8 +1953,29 @@
       useEffect(() => {
         if (descPhase !== "clamped") return undefined;
         measureDescription();
-        window.addEventListener("resize", measureDescription);
-        return () => window.removeEventListener("resize", measureDescription);
+        const remeasure = () => measureDescription();
+        window.addEventListener("resize", remeasure);
+        /* The webfont swaps in after first paint and rewraps the text, which
+           can turn a description that fit into one that does not. The browser
+           never reports that as a resize, so listen for the fonts promise and
+           the load event as well. A local observer then covers any later
+           change to the paragraph's box of its own. The setters are given the
+           same values every time, so a re-measure that finds nothing new
+           settles without another render. */
+        if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
+          document.fonts.ready.then(remeasure);
+        }
+        window.addEventListener("load", remeasure);
+        let observer = null;
+        if (typeof ResizeObserver === "function" && descRef.current) {
+          observer = new ResizeObserver(remeasure);
+          observer.observe(descRef.current);
+        }
+        return () => {
+          window.removeEventListener("resize", remeasure);
+          window.removeEventListener("load", remeasure);
+          if (observer) observer.disconnect();
+        };
       }, [descPhase, item.description]);
 
       useEffect(() => {
