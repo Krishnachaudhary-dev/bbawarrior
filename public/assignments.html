@@ -1,5 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
+<!--
+  PREVIEW ONLY - premium dark UI proposal for the BBA Section H Organizer.
+  This file is a local copy served only in the Freebuff preview panel.
+  It is NOT wired to the live site: index.html and public/assignments.html are untouched,
+  nothing is committed, pushed or deployed. Safe to delete after the design decision.
+-->
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -26,7 +32,7 @@
             card: "0 1px 2px rgba(15,23,42,.04), 0 14px 34px -18px rgba(15,23,42,.25)",
             lift: "0 2px 6px rgba(15,23,42,.06), 0 28px 56px -24px rgba(15,23,42,.35)",
             glow: "0 10px 30px -12px rgba(16,185,129,.65)",
-            "card-dark": "0 1px 2px rgba(2,6,23,.5), 0 18px 40px -22px rgba(2,6,23,.8)",
+            "card-dark": "0 2px 4px rgba(2,6,23,.35), 0 30px 60px -24px rgba(2,6,23,.9), inset 0 1px 0 rgba(148,163,184,.08)",
           },
           keyframes: {
             fadeIn: { from: { opacity: "0" }, to: { opacity: "1" } },
@@ -57,6 +63,23 @@
       background-color: #f1f5f9;
     }
     html.dark body { background-color: #020617; }
+
+    /* ---- PREVIEW ONLY: premium dark glass overrides (not deployed) ---- */
+    .font-display { letter-spacing: -0.01em; }
+    html.dark .dark\:text-slate-400 { color: #a9b9cf; }
+    html.dark .dark\:text-slate-500 { color: #8fa2ba; }
+    html.dark .text-slate-500 { color: #8fa2ba; }
+    html.dark .glass-sheen {
+      background-image: linear-gradient(160deg, rgba(255,255,255,0.075), rgba(255,255,255,0.02) 40%, rgba(255,255,255,0) 78%);
+    }
+    html.dark .glass-sheen::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 1px;
+      pointer-events: none;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
+    }
 
     /* Every interactive element advertises itself and shows a visible focus ring. */
     button:not(:disabled), [role="button"], select, summary, input[type="date"], input[type="file"] { cursor: pointer; }
@@ -116,7 +139,7 @@
     import { createRoot } from "react-dom/client";
     import {
       ArrowRight, BookOpen, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert,
-      CircleCheckBig, Clock, Copy, Download, Eye, EyeOff, Filter, GraduationCap,
+      CircleCheckBig, Clock,      Copy, Download, Eye, EyeOff, FileText, Filter, GraduationCap,
       HardDrive, ImagePlus, Inbox, KeyRound, Layers, Lightbulb, LoaderCircle,
       Lock, LogIn, LogOut, Maximize2, Monitor, Moon, Pencil, PenLine, Plus,
       RefreshCw, Search, Settings, ShieldCheck, Sparkles, Sun, Tag, Trash2,
@@ -352,6 +375,46 @@
       } catch (err) {
         return false; /* quota exceeded or storage blocked */
       }
+    }
+
+    /* Ids deleted on this device, kept until the server copy agrees they are
+       gone. A board answer can predate a delete made here, and without this
+       list the next poll would put the card straight back on screen. Ids are
+       never reused, so a tombstone only has to outlive the round trip. */
+    const DELETED_KEY = "bba-section-h-organizer.deleted.v1";
+
+    function loadDeleted() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(DELETED_KEY) || "[]");
+        return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string" && id) : [];
+      } catch (err) {
+        return []; /* corrupted storage, nothing to guard */
+      }
+    }
+
+    function saveDeleted(list) {
+      try {
+        localStorage.setItem(DELETED_KEY, JSON.stringify(list.slice(-200)));
+        return true;
+      } catch (err) {
+        return false;
+      }
+    }
+
+    /* One decision for every board answer, pure so it can be tested without a
+       board: drop ids this device has already deleted, forget the tombstones
+       the server has caught up with, and report whether the corrected list
+       needs to travel back so every device converges on the shorter list. */
+    function reconcileBoard(remoteItems, localItems, deletedIds) {
+      const gone = new Set(deletedIds);
+      const kept = remoteItems.filter((item) => !gone.has(item.id));
+      const held = new Set(remoteItems.map((item) => item.id));
+      return {
+        items: kept,
+        changed: itemsFingerprint(kept) !== itemsFingerprint(localItems),
+        stale: kept.length !== remoteItems.length,
+        nextDeleted: deletedIds.filter((id) => held.has(id)),
+      };
     }
 
     function normaliseAccount(raw) {
@@ -938,12 +1001,77 @@
        Shared class strings
        ============================================================ */
 
+    /* PREVIEW ONLY: save an attached picture to the device. The bytes are
+       fetched and handed to the browser as a blob, so the download keeps its
+       file name even for cross-origin pictures, with a new-tab fallback if
+       the fetch is blocked. */
+    /* PDFs ride in the same attachment lists as pictures, stored as data URLs.
+       They are spotted by their mime type or file extension. */
+    function isPdf(src) {
+      const s = String(src || "");
+      return s.startsWith("data:application/pdf") || (/\.pdf$/i).test(s.split(/[?#]/)[0]);
+    }
+
+    function pictureFileName(title, index, src) {
+      const base = String(title || "assignment").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "assignment";
+      if (isPdf(src)) return base + "-document-" + (index + 1) + ".pdf";
+      const ext = String(src || "").split(/[?#]/)[0].match(/\.([a-z0-9]{2,5})$/i);
+      return base + "-picture-" + (index + 1) + (ext ? "." + ext[1].toLowerCase() : ".jpg");
+    }
+
+    async function downloadPicture(src, title, index) {
+      const name = pictureFileName(title, index, src);
+      try {
+        const res = await fetch(src, { mode: "cors" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } catch (err) {
+        window.open(src, "_blank", "noopener");
+      }
+    }
+
+    /* PDFs cannot be resized like photos, so a raw size cap keeps the storage
+       budget safe. One megabyte covers a scanned worksheet comfortably. */
+    const MAX_PDF_BYTES = 1024 * 1024;
+
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("The file could not be read."));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    /* Chrome refuses top level navigation to data: URLs, so the bytes are
+       rewrapped as a blob URL before opening. A direct open is the fallback
+       for remote files whose fetch is blocked. */
+    async function openPdfDocument(src) {
+      try {
+        const res = await fetch(src, { mode: "cors" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const url = URL.createObjectURL(await res.blob());
+        window.open(url, "_blank", "noopener");
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch (err) {
+        window.open(src, "_blank", "noopener");
+      }
+    }
+
     const INPUT =
       "w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-500 dark:focus:bg-slate-900 dark:focus:ring-emerald-500/20";
     const INPUT_ERR =
       "w-full rounded-xl border border-rose-300 bg-rose-50/40 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 outline-none transition focus:border-rose-400 focus:bg-white focus:ring-4 focus:ring-rose-100 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-slate-100 dark:focus:border-rose-400 dark:focus:ring-rose-500/20";
     const CARD =
-      "rounded-2xl border border-slate-200/70 bg-white/85 shadow-card backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/60 dark:shadow-card-dark";
+      "relative rounded-2xl border border-slate-200/70 bg-white/85 shadow-card backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/45 dark:shadow-card-dark glass-sheen";
     const BTN_PRIMARY =
       "inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:to-emerald-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-emerald-300 active:scale-[0.98]";
     const BTN_GHOST =
@@ -958,11 +1086,11 @@
     function AmbientBackdrop() {
       return (
         <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.07)_1px,transparent_0)] [background-size:24px_24px] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(148,163,184,0.10)_1px,transparent_0)]" />
-          <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-emerald-400/25 blur-3xl dark:bg-emerald-500/10" />
-          <div className="absolute -right-48 top-32 h-[30rem] w-[30rem] rounded-full bg-sky-400/20 blur-3xl dark:bg-sky-500/10" />
-          <div className="absolute bottom-[-9rem] left-1/4 h-80 w-80 rounded-full bg-indigo-400/15 blur-3xl dark:bg-indigo-500/10" />
-          <div className="absolute inset-0 bg-gradient-to-b from-white/50 via-transparent to-slate-100/70 dark:from-slate-950/60 dark:via-transparent dark:to-slate-950/80" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.07)_1px,transparent_0)] [background-size:24px_24px] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(148,163,184,0.14)_1px,transparent_0)]" />
+          <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-emerald-400/25 blur-3xl dark:bg-emerald-500/[0.18]" />
+          <div className="absolute -right-48 top-32 h-[30rem] w-[30rem] rounded-full bg-sky-400/20 blur-3xl dark:bg-sky-500/[0.16]" />
+          <div className="absolute bottom-[-9rem] left-1/4 h-80 w-80 rounded-full bg-indigo-400/15 blur-3xl dark:bg-indigo-500/[0.15]" />
+          <div className="absolute inset-0 bg-gradient-to-b from-white/50 via-transparent to-slate-100/70 dark:from-slate-950/35 dark:via-transparent dark:to-slate-950/55" />
         </div>
       );
     }
@@ -1588,7 +1716,7 @@
       const Icon = meta.icon;
       const pct = total ? Math.round((count / total) * 100) : 0;
       return (
-        <div className={`${CARD} p-4 transition hover:shadow-lift sm:p-5`}>
+        <div className={`${CARD} p-5 transition hover:shadow-lift sm:p-6`}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{label}</p>
@@ -1808,12 +1936,63 @@
       const due = dueInfo(item.dueDate, item.status);
       const solutionId = "solution-" + item.id;
 
+      /* The description clamps to three lines. When it truly overflows, a small
+         See more control expands it in place. The move is animated through a
+         max-height transition, and the three-line clamp is only reapplied after
+         the collapse animation finishes, so both directions stay smooth. */
+      const descRef = useRef(null);
+      const descTimer = useRef(null);
+      const [descPhase, setDescPhase] = useState("clamped"); /* clamped | open | collapsing */
+      const [descOver, setDescOver] = useState(false);
+      const [descFull, setDescFull] = useState(0);
+      const [descClamped, setDescClamped] = useState(0);
+
+      function measureDescription() {
+        const el = descRef.current;
+        if (!el) return;
+        const over = el.scrollHeight > el.clientHeight + 1;
+        setDescOver(over);
+        setDescFull(el.scrollHeight);
+        setDescClamped(over ? el.clientHeight : 0);
+      }
+
+      useEffect(() => {
+        if (descPhase !== "clamped") return undefined;
+        measureDescription();
+        window.addEventListener("resize", measureDescription);
+        return () => window.removeEventListener("resize", measureDescription);
+      }, [descPhase, item.description]);
+
+      useEffect(() => {
+        if (descPhase !== "collapsing") return undefined;
+        /* If the transition end event never fires, settle on a timer instead. */
+        descTimer.current = setTimeout(() => setDescPhase("clamped"), 380);
+        return () => clearTimeout(descTimer.current);
+      }, [descPhase]);
+
+      function toggleDescription() {
+        if (descPhase === "collapsing") return;
+        if (descPhase === "clamped") {
+          measureDescription(); /* capture the real full height while still clamped */
+          setDescPhase("open");
+          return;
+        }
+        setDescPhase("collapsing");
+      }
+
+      function handleDescTransitionEnd(event) {
+        if (event.target !== event.currentTarget || event.propertyName !== "max-height") return;
+        if (descPhase !== "collapsing") return;
+        clearTimeout(descTimer.current);
+        setDescPhase("clamped"); /* the effect re-measures once the clamp is back on */
+      }
+
       const cardTone =
         item.status === "completed"
-          ? "border-emerald-200/80 bg-emerald-50/40 dark:border-emerald-500/25 dark:bg-emerald-500/5"
+          ? "border-emerald-200/80 bg-emerald-50/40 dark:border-emerald-400/25 dark:bg-emerald-500/[0.08]"
           : due.overdue
-          ? "border-rose-200/80 bg-rose-50/40 dark:border-rose-500/25 dark:bg-rose-500/5"
-          : "border-slate-200/70 bg-white dark:border-slate-800 dark:bg-slate-900/60";
+          ? "border-rose-200/80 bg-rose-50/40 dark:border-rose-400/25 dark:bg-rose-500/[0.08]"
+          : "border-slate-200/70 bg-white dark:border-white/10 dark:bg-slate-900/45";
 
       function handleCopy() {
         copyText(item.solution || "").then(() => {
@@ -1832,7 +2011,7 @@
       }
 
       return (
-        <article className={`group relative flex flex-col rounded-2xl border p-5 shadow-card backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-lift dark:shadow-card-dark ${cardTone}`}>
+        <article className={`group relative flex flex-col rounded-[22px] border p-5 shadow-card backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-lift dark:shadow-card-dark glass-sheen sm:p-6 ${cardTone}`}>
           <div className="flex items-start justify-between gap-3">
             <span className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
               <span className={`h-1.5 w-1.5 rounded-full ${subjectDot(item.subject)}`} aria-hidden="true" />
@@ -1882,15 +2061,31 @@
 
           {item.images.length > 0 ? (
             <div className="mt-3">
-              <div className={"grid gap-1.5 " + (item.images.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
+              <div className={"grid gap-2.5 " + (item.images.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
                 {item.images.slice(0, 4).map((src, index) => (
                   <div key={index} className="group/img relative overflow-hidden rounded-xl border border-slate-200/70 bg-slate-100 dark:border-slate-800 dark:bg-slate-800">
-                    <img
-                      src={src}
-                      alt={"Picture " + (index + 1) + " attached to " + item.title}
-                      loading="lazy"
-                      className="h-40 w-full object-cover transition duration-500 group-hover/img:scale-[1.04]"
-                    />
+                    {isPdf(src) ? (
+                      <button
+                        type="button"
+                        onClick={() => openPdfDocument(src)}
+                        title="View document"
+                        aria-label={"Open document " + (index + 1) + " of " + item.title}
+                        className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-rose-500/10 to-transparent text-slate-500 transition duration-300 group-hover/img:from-rose-500/20 dark:from-rose-500/15 dark:text-slate-300"
+                      >
+                        <span className="rounded-lg bg-rose-500/15 p-2.5 text-rose-600 ring-1 ring-inset ring-rose-500/30 dark:text-rose-300">
+                          <FileText size={22} />
+                        </span>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-300">PDF document</span>
+                      </button>
+                    ) : (
+                      <img
+                        src={src}
+                        alt={"Picture " + (index + 1) + " attached to " + item.title}
+                        loading="lazy"
+                        className="aspect-[4/3] w-full object-cover transition duration-500 group-hover/img:scale-[1.04]"
+                      />
+                    )}
+                    {!isPdf(src) && (
                     <button
                       type="button"
                       onClick={() => onViewImage(item, index)}
@@ -1903,6 +2098,7 @@
                         View
                       </span>
                     </button>
+                    )}
                     {canManage && (
                       <button
                         type="button"
@@ -1914,8 +2110,17 @@
                         <Trash2 size={13} />
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => downloadPicture(src, item.title, index)}
+                      title="Download full resolution"
+                      aria-label={"Download picture " + (index + 1) + " of " + item.title}
+                      className="absolute bottom-2 right-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-lg bg-slate-950/55 text-white/85 ring-1 ring-inset ring-white/15 backdrop-blur-md transition hover:bg-slate-950/80 hover:text-white focus-visible:opacity-100"
+                    >
+                      <Download size={13} />
+                    </button>
                     {index === 3 && item.images.length > 4 && (
-                      <span className="pointer-events-none absolute bottom-2 right-2 rounded-lg bg-slate-900/75 px-2 py-1 text-[11px] font-bold text-white">
+                      <span className="pointer-events-none absolute bottom-2 left-2 rounded-lg bg-slate-900/75 px-2 py-1 text-[11px] font-bold text-white">
                         +{item.images.length - 4} more
                       </span>
                     )}
@@ -1929,7 +2134,7 @@
                   className="mt-2 flex min-h-[36px] w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 text-[11px] font-semibold text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50/60 hover:text-emerald-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-emerald-500/40 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-300"
                 >
                   <ImagePlus size={12} />
-                  Add more pictures
+                  Add more pictures or PDFs
                 </button>
               )}
             </div>
@@ -1938,9 +2143,8 @@
               type="button"
               onClick={() => onPickImage(item.id)}
               className="mt-3 flex min-h-[40px] w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 text-[11px] font-semibold text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50/60 hover:text-emerald-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400 dark:hover:border-emerald-500/40 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-300"
-            >
-              <ImagePlus size={14} />
-              Add pictures
+            >                <ImagePlus size={14} />
+                Add pictures or PDF
             </button>
           ) : null}
 
@@ -1958,10 +2162,27 @@
             </span>
           </div>
 
-          <p className="mt-3 text-sm leading-relaxed text-slate-600 line-clamp-3 dark:text-slate-300">
-            {item.description || "No description yet."}
-          </p>
-
+          <p
+            ref={descRef}
+            onTransitionEnd={handleDescTransitionEnd}
+            style={descOver ? { maxHeight: descPhase === "open" ? descFull : descClamped } : undefined}
+            className={
+              "mt-3 overflow-hidden text-sm leading-relaxed text-slate-600 transition-[max-height] duration-300 ease-out dark:text-slate-300 " +
+              (descPhase === "open" || descPhase === "collapsing" ? "" : "line-clamp-3")
+            }
+          >
+            {item.description || "No description yet."}          </p>
+          {descOver && (
+            <button
+              type="button"
+              onClick={toggleDescription}
+              aria-expanded={descPhase !== "clamped"}
+              className="-ml-1 mt-1 inline-flex items-center gap-1 rounded-lg px-1 py-0.5 text-xs font-semibold text-slate-500 transition hover:text-emerald-700 dark:text-slate-400 dark:hover:text-emerald-300"
+            >
+              {descPhase === "clamped" ? "See more" : "See less"}
+              <ChevronDown size={12} className={"transition-transform duration-300 " + (descPhase === "open" ? "rotate-180" : "")} />
+            </button>
+          )}
           <div className="mt-4 flex items-center justify-between gap-3">
             {canManage ? (
               <button
@@ -2038,12 +2259,39 @@
                       <div className="mt-3 grid grid-cols-3 gap-2">
                         {item.solutionImages.slice(0, 6).map((src, index) => (
                           <div key={index} className="group/sol relative overflow-hidden rounded-xl border border-emerald-200/80 bg-white/60 dark:border-emerald-500/25 dark:bg-slate-900/50">
-                            <img
-                              src={src}
-                              alt={"Answer picture " + (index + 1) + " for " + item.title}
-                              loading="lazy"
-                              className="h-20 w-full object-cover transition duration-500 group-hover/sol:scale-[1.03]"
-                            />
+                            {isPdf(src) ? (
+                              <button
+                                type="button"
+                                onClick={() => openPdfDocument(src)}
+                                tabIndex={open ? 0 : -1}
+                                title="View document"
+                                aria-label={"Open answer document " + (index + 1) + " of " + item.title}
+                                className="flex h-20 w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-rose-500/10 to-transparent text-slate-500 transition duration-300 group-hover/sol:from-rose-500/20 dark:from-rose-500/15 dark:text-slate-300"
+                              >
+                                <span className="rounded-md bg-rose-500/15 p-1.5 text-rose-600 ring-1 ring-inset ring-rose-500/30 dark:text-rose-300">
+                                  <FileText size={16} />
+                                </span>
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-300">PDF</span>
+                              </button>
+                            ) : (
+                              <img
+                                src={src}
+                                alt={"Answer picture " + (index + 1) + " for " + item.title}
+                                loading="lazy"
+                                className="h-20 w-full object-cover transition duration-500 group-hover/sol:scale-[1.03]"
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => downloadPicture(src, item.title, index)}
+                              tabIndex={open ? 0 : -1}
+                              title="Download full resolution"
+                              aria-label={"Download answer picture " + (index + 1) + " of " + item.title}
+                              className="absolute bottom-1.5 right-1.5 z-10 inline-flex h-6 w-6 items-center justify-center rounded-md bg-slate-950/55 text-white/85 ring-1 ring-inset ring-white/15 backdrop-blur-md transition hover:bg-slate-950/80 hover:text-white focus-visible:opacity-100"
+                            >
+                              <Download size={11} />
+                            </button>
+                            {!isPdf(src) && (
                             <button
                               type="button"
                               onClick={() => onViewSolutionImage(item, index)}
@@ -2054,6 +2302,8 @@
                             >
                               <Maximize2 size={12} className="text-white" />
                             </button>
+                            )}
+                            {canManage && (
                             <button
                               type="button"
                               onClick={() => onRemoveSolutionImage(item.id, index)}
@@ -2063,12 +2313,13 @@
                             >
                               <Trash2 size={11} />
                             </button>
+                            )}
                           </div>
                         ))}
                       </div>
                     )}
 
-                    {item.solutionImages.length < MAX_PICTURES && (
+                    {canManage && item.solutionImages.length < MAX_PICTURES && (
                       <button
                         type="button"
                         onClick={() => onPickSolutionImage(item.id)}
@@ -2076,7 +2327,7 @@
                         className={"mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-emerald-200 bg-white/50 text-[11px] font-semibold text-emerald-700 transition hover:bg-white dark:border-emerald-500/25 dark:bg-slate-900/40 dark:text-emerald-300 dark:hover:bg-slate-900 " + (item.solutionImages.length ? "min-h-[36px]" : "min-h-[40px]")}
                       >
                         <ImagePlus size={13} />
-                        {item.solutionImages.length ? "Add more answer pictures" : "Attach pictures of the answer"}
+                        {item.solutionImages.length ? "Add more answer files" : "Attach pictures or a PDF of the answer"}
                       </button>
                     )}
                   </div>
@@ -2101,7 +2352,7 @@
 
     /* Shared picture picker. Used in the add form and, in compact form, inside
        the solution accordion, so pictures can always be added or removed in place. */
-    function PictureGrid({ images, busy, onPick, onRemove, tone = "slate", compact = false, emptyLabel = "Add pictures" }) {
+    function PictureGrid({ images, busy, onPick, onRemove, tone = "slate", compact = false, emptyLabel = "Add pictures or PDF" }) {
       const frame = tone === "emerald"
         ? "border-emerald-200/80 bg-white/60 dark:border-emerald-500/25 dark:bg-slate-900/50"
         : "border-slate-200/70 bg-slate-100 dark:border-slate-700 dark:bg-slate-800";
@@ -2116,16 +2367,31 @@
             <div className={"grid gap-2 " + (compact ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3")}>
               {images.map((src, index) => (
                 <div key={index} className={"relative overflow-hidden rounded-xl border " + frame}>
-                  <img
-                    src={src}
-                    alt={"Picture " + (index + 1)}
-                    className={compact ? "h-20 w-full object-cover" : "h-28 w-full object-cover"}
-                  />
+                  {isPdf(src) ? (
+                    <button
+                      type="button"
+                      onClick={() => openPdfDocument(src)}
+                      title="View document"
+                      aria-label={"Open document " + (index + 1)}
+                      className="flex h-28 w-full flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-rose-500/10 to-transparent text-slate-500 transition hover:from-rose-500/20 dark:from-rose-500/15 dark:text-slate-300"
+                    >
+                      <span className="rounded-lg bg-rose-500/15 p-2 text-rose-600 ring-1 ring-inset ring-rose-500/30 dark:text-rose-300">
+                        <FileText size={18} />
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-300">PDF document</span>
+                    </button>
+                  ) : (
+                    <img
+                      src={src}
+                      alt={"Picture " + (index + 1)}
+                      className={compact ? "h-20 w-full object-cover" : "h-28 w-full object-cover"}
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => onRemove(index)}
-                    aria-label={"Remove picture " + (index + 1)}
-                    title="Remove picture"
+                    aria-label={(isPdf(src) ? "Remove document " : "Remove picture ") + (index + 1)}
+                    title={isPdf(src) ? "Remove document" : "Remove picture"}
                     className="absolute right-1.5 top-1.5 rounded-lg bg-white/90 p-1.5 text-slate-600 transition hover:bg-rose-50 hover:text-rose-600"
                   >
                     <Trash2 size={12} />
@@ -2149,15 +2415,15 @@
           >
             {busy > 0 ? <LoaderCircle size={14} className="animate-spin" /> : <ImagePlus size={14} />}
             {busy > 0
-              ? "Resizing " + busy + " picture" + (busy === 1 ? "" : "s")
+              ? "Attaching " + busy + " file" + (busy === 1 ? "" : "s")
               : full
-                ? "Maximum of " + MAX_PICTURES + " pictures"
-                : images.length ? "Add more pictures" : emptyLabel}
+                ? "Maximum of " + MAX_PICTURES + " files"
+                : images.length ? "Add more files" : emptyLabel}
           </button>
 
           {images.length > 0 && (
             <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-              {images.length} of {MAX_PICTURES} pictures
+              {images.length} of {MAX_PICTURES} files
             </p>
           )}
         </div>
@@ -2217,7 +2483,7 @@
         const existing = form[key] || [];
         const room = Math.max(0, MAX_PICTURES - existing.length);
         if (!room) {
-          setImageErrors((e) => ({ ...e, [key]: "Remove a picture first, the limit is " + MAX_PICTURES + "." }));
+          setImageErrors((e) => ({ ...e, [key]: "Remove a file first, the limit is " + MAX_PICTURES + "." }));
           return;
         }
 
@@ -2231,16 +2497,21 @@
         let failure = "";
         for (const file of files) {
           try {
+            if (file.type === "application/pdf" || (/\.pdf$/i).test(file.name)) {
+              if (file.size > MAX_PDF_BYTES) throw new Error("PDFs are capped at 1 MB, that one is " + Math.round(file.size / 1024) + " KB.");
+              added.push(await fileToDataUrl(file));
+              continue;
+            }
             added.push(await processImage(file, budget));
           } catch (err) {
-            failure = err.message || "One picture could not be loaded.";
+            failure = err.message || "One file could not be loaded.";
           }
         }
         setBusy((b) => ({ ...b, [key]: Math.max(0, b[key] - files.length) }));
         if (added.length) setForm((f) => ({ ...f, [key]: [...(f[key] || []), ...added] }));
         setImageErrors((e) => ({
           ...e,
-          [key]: failure || (picked.length > room ? "Added " + added.length + " of " + picked.length + " pictures. " + MAX_PICTURES + " is the limit." : ""),
+          [key]: failure || (picked.length > room ? "Added " + added.length + " of " + picked.length + " files. " + MAX_PICTURES + " is the limit." : ""),
         }));
       }
 
@@ -2384,7 +2655,7 @@
                 id="task-picture"
                 ref={fileRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf,.pdf"
                 multiple
                 className="hidden"
                 onChange={(e) => handleImages(e, "images")}
@@ -2424,13 +2695,13 @@
                   busy={busy.solutionImages}
                   onPick={() => solutionFileRef.current && solutionFileRef.current.click()}
                   onRemove={(index) => setForm((f) => ({ ...f, solutionImages: f.solutionImages.filter((_, i) => i !== index) }))}
-                  emptyLabel="Attach pictures of the answer"
+                  emptyLabel="Attach pictures or a PDF of the answer"
                 />
               </div>
               <input
                 ref={solutionFileRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf,.pdf"
                 multiple
                 className="hidden"
                 onChange={(e) => handleImages(e, "solutionImages")}
@@ -3387,28 +3658,33 @@
         const existing = item[key] || [];
         const room = Math.max(0, MAX_PICTURES - existing.length);
         if (!room) {
-          notify("That assignment already has " + MAX_PICTURES + " pictures", "danger");
+          notify("That assignment already has " + MAX_PICTURES + " files", "danger");
           return;
         }
 
         const files = picked.slice(0, room);
         const budget = existing.length ? IMAGE_CHAR_BUDGET_FILL : IMAGE_CHAR_BUDGET;
         const where = target.kind === "solution" ? "the answer" : "the card";
-        notify("Resizing " + files.length + " picture" + (files.length === 1 ? "" : "s") + " for " + where, "info");
+        notify("Attaching " + files.length + " file" + (files.length === 1 ? "" : "s") + " to " + where, "info");
 
         const added = [];
         for (const file of files) {
           try {
+            if (file.type === "application/pdf" || (/\.pdf$/i).test(file.name)) {
+              if (file.size > MAX_PDF_BYTES) throw new Error("PDFs are capped at 1 MB, that one is " + Math.round(file.size / 1024) + " KB.");
+              added.push(await fileToDataUrl(file));
+              continue;
+            }
             added.push(await processImage(file, budget));
           } catch (err) {
-            notify(err.message || "One picture could not be loaded", "danger");
+            notify(err.message || "One file could not be loaded", "danger");
           }
         }
         if (!added.length) return;
         onAddPictures(target.id, key, added);
         const skipped = picked.length - added.length;
         notify(
-          added.length + (added.length === 1 ? " picture added to " : " pictures added to ") + where +
+          added.length + (added.length === 1 ? " file added to " : " files added to ") + where +
             (skipped > 0 ? ". " + skipped + " skipped, the limit is " + MAX_PICTURES : "")
         );
       }
@@ -3519,7 +3795,7 @@
                 ))}
               </section>
 
-              <section className={`${CARD} mt-5 p-3 sm:p-4`}>
+              <section className={`${CARD} mt-5 p-4 sm:p-5`}>
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                   <div className="relative flex-1">
                     <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
@@ -3669,7 +3945,7 @@
             </main>
           </div>
 
-          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImagePick} />
+          <input ref={fileRef} type="file" accept="image/*,application/pdf,.pdf" multiple className="hidden" onChange={handleImagePick} />
 
           <TaskModal
             open={modalOpen}
@@ -3721,12 +3997,15 @@
               onIndex={(index) => setLightbox((l) => ({ ...l, index }))}
               caption={lightboxEntry.title}
               onClose={() => setLightbox(null)}
-              onRemove={(index) =>
-                onRemovePicture(
-                  lightboxEntry.id,
-                  lightbox.kind === "solution" ? "solutionImages" : "images",
-                  index
-                )
+              onRemove={
+                account && account.role === "admin"
+                  ? (index) =>
+                      onRemovePicture(
+                        lightboxEntry.id,
+                        lightbox.kind === "solution" ? "solutionImages" : "images",
+                        index
+                      )
+                  : undefined
               }
             />
           )}
@@ -3820,6 +4099,9 @@
         });
       };
       const [items, setItems] = useState(loadItems);
+      /* Deleted ids ride along with the items so a board answer that predates a
+         delete cannot put the card back. */
+      const [deletedIds, setDeletedIds] = useState(loadDeleted);
       const [config, setConfig] = useState(loadConfig);
       const [toast, setToast] = useState(null);
       const [systemDark, setSystemDark] = useState(
@@ -3906,11 +4188,22 @@
         await flushPendingEnrolment();
         const state = await remotePull();
         if (!state) return;
-        const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
-        const fp = itemsFingerprint(remoteItems);
-        if (fp !== itemsFingerprint(items)) {
-          lastRemoteItems.current = fp;
-          setItems(remoteItems);
+        const rawRemote = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
+        const board = reconcileBoard(rawRemote, items, deletedIds);
+        /* Tombstones the server has caught up with are forgotten here, so the
+           guard only lives as long as it is needed. */
+        if (board.nextDeleted.length !== deletedIds.length) {
+          setDeletedIds(board.nextDeleted);
+          saveDeleted(board.nextDeleted);
+        }
+        if (board.changed) {
+          lastRemoteItems.current = itemsFingerprint(board.items);
+          setItems(board.items);
+        }
+        if (board.stale) {
+          /* The shorter list wins and travels back: without this the server
+             keeps the deleted id and the next device that syncs re-adds it. */
+          upload("saveBoard", board.items);
         }
         const remoteAccounts = Array.isArray(state.accounts)
           ? state.accounts.map(normaliseAccount).filter(Boolean)
@@ -3959,6 +4252,7 @@
         const onStorage = (event) => {
           const key = event.key;
           if (!key || key === STORAGE_KEY) refreshBoard();
+          if (!key || key === DELETED_KEY) setDeletedIds(loadDeleted());
           if (!key || key === CONFIG_KEY || key === SESSION_KEY) syncAccounts();
         };
         window.addEventListener("storage", onStorage);
@@ -4286,7 +4580,15 @@
 
       function removeItem(id) {
         const target = items.find((i) => i.id === id);
-        setItems((prev) => prev.filter((item) => item.id !== id));
+        const next = items.filter((item) => item.id !== id);
+        /* Optimistic, and backed on the spot: the card leaves the screen, the
+           shorter list reaches storage, and the tombstone stops the next board
+           answer from resurrecting it, all before this function returns. */
+        const tombstones = [...deletedIds, id];
+        setDeletedIds(tombstones);
+        saveDeleted(tombstones);
+        setItems(next);
+        saveItems(next);
         if (target) notify("Deleted " + target.title, "danger");
       }
 
@@ -4423,15 +4725,20 @@
           )}
           <Toast toast={toast} />
 
-          {/* When this page is served from the college quiz app it gets a way back. */}
+          {/* Trivia replaces the old quiz link: it stays visible but quiet until
+              the quiz app itself is ready to open. */}
           {window.location.pathname.split("/").pop() !== "index.html" && (
-            <a
-              href="./index.html"
-              className="fixed bottom-4 left-4 z-[55] inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-semibold text-slate-600 shadow-lift ring-1 ring-slate-200 backdrop-blur transition hover:text-emerald-700 dark:bg-slate-900/90 dark:text-slate-300 dark:ring-slate-700"
+            <span
+              title="Coming soon"
+              aria-disabled="true"
+              className="fixed bottom-4 left-4 z-[55] inline-flex min-h-[40px] items-center gap-1.5 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-semibold text-slate-600 opacity-80 shadow-lift ring-1 ring-slate-200 backdrop-blur dark:bg-slate-900/90 dark:text-slate-300 dark:ring-slate-700"
             >
-              <ArrowRight size={13} className="rotate-180" />
-              College Quiz
-            </a>
+              <Sparkles size={13} />
+              Trivia
+              <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-500/30 dark:text-emerald-300">
+                Soon
+              </span>
+            </span>
           )}
         </>
       );
