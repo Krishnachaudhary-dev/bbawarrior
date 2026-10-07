@@ -22,7 +22,9 @@ export default async function handler(req, res) {
   }
 
   if (!isConfigured()) {
-    return res.status(200).json({ ok: false, offline: true, reason: 'Shared class storage is not set up yet.' });
+    /* 503, not 200: the client still reads the body and falls back to its local
+       copy, but a caller that only looks at the status sees the truth. */
+    return res.status(503).json({ ok: false, offline: true, reason: 'Shared class storage is not set up yet.' });
   }
 
   try {

@@ -78,10 +78,10 @@ export default function App() {
     setAppState('success');
   };
 
-  const handleAdminLogin = (e) => {
+  const handleAdminLogin = async (e) => {
     e.preventDefault();
     setAdminError('');
-    const result = signInAdmin(adminUsernameInput, adminPasswordInput);
+    const result = await signInAdmin(adminUsernameInput, adminPasswordInput);
     if (result.ok) {
       setAppState('admin');
       setAdminUsernameInput('');

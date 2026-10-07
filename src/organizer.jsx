@@ -1,134 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BBA Section H Organizer</title>
-  <meta name="description" content="Password-protected assignment organizer for BBA Section H. Track subjects, due dates, status, pictures and solutions." />
-  <meta name="color-scheme" content="light dark" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2310b981'/%3E%3Cstop offset='1' stop-color='%230d9488'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Cpath d='M32 16 10 26l22 10 22-10z' fill='%23fff'/%3E%3Cpath d='M21 33v9c0 3.6 4.9 6.5 11 6.5s11-2.9 11-6.5v-9l-11 5z' fill='%23fff' opacity='.85'/%3E%3C/svg%3E" />
-
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
-
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: "class",
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
-            display: ["Outfit", "Inter", "ui-sans-serif", "system-ui", "sans-serif"],
-          },
-          boxShadow: {
-            card: "0 1px 2px rgba(15,23,42,.04), 0 14px 34px -18px rgba(15,23,42,.25)",
-            lift: "0 2px 6px rgba(15,23,42,.06), 0 28px 56px -24px rgba(15,23,42,.35)",
-            glow: "0 10px 30px -12px rgba(16,185,129,.65)",
-            "card-dark": "0 2px 4px rgba(2,6,23,.35), 0 30px 60px -24px rgba(2,6,23,.9), inset 0 1px 0 rgba(148,163,184,.08)",
-          },
-          keyframes: {
-            fadeIn: { from: { opacity: "0" }, to: { opacity: "1" } },
-            rise: {
-              from: { opacity: "0", transform: "translateY(14px) scale(.97)" },
-              to: { opacity: "1", transform: "translateY(0) scale(1)" },
-            },
-            toastIn: {
-              from: { opacity: "0", transform: "translateY(14px)" },
-              to: { opacity: "1", transform: "translateY(0)" },
-            },
-          },
-          animation: {
-            "fade-in": "fadeIn .2s ease-out both",
-            rise: "rise .32s cubic-bezier(.16,1,.3,1) both",
-            "toast-in": "toastIn .3s cubic-bezier(.16,1,.3,1) both",
-          },
-        },
-      },
-    };
-  </script>
-
-  <style>
-    html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-    body {
-      margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-      background-color: #f1f5f9;
-    }
-    html.dark body { background-color: #020617; }
-
-    /* ---- premium dark glass overrides ---- */
-    .font-display { letter-spacing: -0.01em; }
-    html.dark .dark\:text-slate-400 { color: #a9b9cf; }
-    html.dark .dark\:text-slate-500 { color: #8fa2ba; }
-    html.dark .text-slate-500 { color: #8fa2ba; }
-    html.dark .glass-sheen {
-      background-image: linear-gradient(160deg, rgba(255,255,255,0.075), rgba(255,255,255,0.02) 40%, rgba(255,255,255,0) 78%);
-    }
-    html.dark .glass-sheen::before {
-      content: "";
-      position: absolute;
-      inset: 0 0 auto 0;
-      height: 1px;
-      pointer-events: none;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
-    }
-
-    /* Every interactive element advertises itself and shows a visible focus ring. */
-    button:not(:disabled), [role="button"], select, summary, input[type="date"], input[type="file"] { cursor: pointer; }
-    button:disabled { cursor: not-allowed; }
-    :where(a, button, input, select, textarea, summary, [role="button"]):focus-visible {
-      outline: 2px solid #10b981;
-      outline-offset: 2px;
-      border-radius: 10px;
-    }
-    ::selection { background: rgba(16, 185, 129, .22); }
-    input[type="date"]::-webkit-calendar-picker-indicator { opacity: .55; cursor: pointer; }
-    html.dark input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: .6; }
-    input:-webkit-autofill,
-    input:-webkit-autofill:focus {
-      -webkit-text-fill-color: #0f172a;
-      -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
-      transition: background-color 9999s ease-in-out 0s;
-    }
-    html.dark input:-webkit-autofill,
-    html.dark input:-webkit-autofill:focus {
-      -webkit-text-fill-color: #e2e8f0;
-      -webkit-box-shadow: 0 0 0 1000px #0f172a inset;
-    }
-    textarea { resize: vertical; }
-    ::-webkit-scrollbar { width: 10px; height: 10px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
-    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; }
-    html.dark ::-webkit-scrollbar-thumb { background: #334155; background-clip: content-box; }
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-    }
-  </style>
-
-  <!-- One React instance shared by the app and lucide-react -->
-  <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@18.3.1",
-        "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
-        "react/jsx-dev-runtime": "https://esm.sh/react@18.3.1/jsx-dev-runtime",
-        "react-dom": "https://esm.sh/react-dom@18.3.1?external=react",
-        "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?external=react",
-        "lucide-react": "https://esm.sh/lucide-react@0.469.0?external=react"
-      }
-    }
-  </script>
-
-  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
-</head>
-
-<body>
-  <div id="root"></div>
-
-  <script type="text/babel" data-type="module" data-presets="react">
     import React, { useEffect, useMemo, useRef, useState } from "react";
     import { createRoot } from "react-dom/client";
     import {
@@ -144,11 +13,17 @@
        Domain constants
        ============================================================ */
 
-    const DEFAULT_PASSWORD = "admin";
     const DEFAULT_CLASS_CODE = "SECTION-H";
     const STORAGE_KEY = "bba-section-h-organizer.v1";
     const CONFIG_KEY = "bba-section-h-organizer.config.v1";
-    const SESSION_KEY = "bba-section-h-organizer.session.v1";
+    /* Two keys from before sign in moved to the server. The session key once held
+       who was signed in, the enrolment key once held a password waiting for the
+       board. Nothing writes them any more; they are deleted on boot so no copy of
+       an old credential survives in this browser. */
+    const LEGACY_SESSION_KEY = "bba-section-h-organizer.session.v1";
+    const LEGACY_PENDING_KEY = "bba-section-h-organizer.pending-enrolment.v1";
+    /* #admin only chooses which sign in screen opens. It grants nothing: every
+       privileged call is authorised by the server against the session cookie. */
     const ADMIN_HASH = "#admin";
 
     /* Everyone signs in with their own login. An admin can manage the class,
@@ -418,34 +293,21 @@
       return {
         id: raw.id ? String(raw.id) : uid(),
         username,
-        /* A blank here means the shared board is not sharing a secret for this login,
-           which is how the server publishes it now. Defaulting it would hand every
-           classmate the same password, so an absent secret stays absent. */
-        password: typeof raw.password === "string" ? raw.password : "",
+        /* No password field, ever. The server publishes only these fields and the
+           browser has no business holding a credential of anyone's. */
         role: raw.role === "admin" ? "admin" : "student",
         createdAt: raw.createdAt ? Number(raw.createdAt) : Date.now(),
         lastSeen: raw.lastSeen ? Number(raw.lastSeen) : 0,
       };
     }
 
-    /* One code, many logins. The first ever config grows a single admin account
-       so an older save keeps working with the same password it always had. */
+    /* A cached roster only: the accounts this device last saw, with no secrets.
+       Who may sign in, and as what role, is decided on the board, never here. */
     function normaliseConfig(parsed) {
       const source = parsed && typeof parsed === "object" ? parsed : {};
-      const stored = Array.isArray(source.accounts) ? source.accounts.map(normaliseAccount).filter(Boolean) : [];
-      const accounts = stored.length
-        ? stored
-        : [{
-            id: uid(),
-            username: "admin",
-            password: typeof source.password === "string" && source.password ? source.password : DEFAULT_PASSWORD,
-            role: "admin",
-            createdAt: Date.now(),
-            lastSeen: 0,
-          }];
-
-      /* Never let a broken file lock everyone out. */
-      if (!accounts.some((a) => a.role === "admin")) accounts[0] = { ...accounts[0], role: "admin" };
+      const accounts = Array.isArray(source.accounts)
+        ? source.accounts.map(normaliseAccount).filter(Boolean)
+        : [];
 
       return {
         subjects: Array.isArray(source.subjects) && source.subjects.length ? source.subjects : [...DEFAULT_SUBJECTS],
@@ -460,14 +322,14 @@
         const raw = localStorage.getItem(CONFIG_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (parsed && (Array.isArray(parsed.subjects) || typeof parsed.password === "string")) {
+          if (parsed && (Array.isArray(parsed.subjects) || Array.isArray(parsed.accounts))) {
             return normaliseConfig(parsed);
           }
         }
       } catch (err) {
         /* fall through to defaults */
       }
-      return normaliseConfig({ password: DEFAULT_PASSWORD, subjects: [...DEFAULT_SUBJECTS], theme: "system" });
+      return normaliseConfig({ subjects: [...DEFAULT_SUBJECTS], theme: "system" });
     }
 
     function saveConfig(config) {
@@ -479,35 +341,37 @@
       }
     }
 
-    /* The signed in identity lives under its own key and never stores a password.
-       The college quiz app reads and writes the same key on the same origin, which
-       is what lets one sign in cover both sites. */
-    function loadSession() {
+    /* Removes credentials an older version of this app left in the browser: the
+       remembered sign in, a password waiting for the board, and any password
+       field still sitting inside the cached account list. Runs on every boot and
+       never prints what it removes. */
+    function purgeLegacySecrets() {
       try {
-        const raw = localStorage.getItem(SESSION_KEY);
-        if (!raw) return null;
+        localStorage.removeItem(LEGACY_SESSION_KEY);
+        localStorage.removeItem(LEGACY_PENDING_KEY);
+        const raw = localStorage.getItem(CONFIG_KEY);
+        if (!raw) return;
         const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed.id !== "string" || !parsed.id) return null;
-        return { id: parsed.id, at: Number(parsed.at) || 0 };
+        if (!parsed || typeof parsed !== "object") return;
+        let changed = false;
+        if (typeof parsed.password === "string") {
+          delete parsed.password;
+          changed = true;
+        }
+        if (Array.isArray(parsed.accounts)) {
+          const cleaned = parsed.accounts.map((account) => {
+            if (account && typeof account === "object" && "password" in account) {
+              const { password, ...rest } = account;
+              changed = true;
+              return rest;
+            }
+            return account;
+          });
+          parsed.accounts = cleaned;
+        }
+        if (changed) localStorage.setItem(CONFIG_KEY, JSON.stringify(parsed));
       } catch (err) {
-        return null;
-      }
-    }
-
-    function saveSession(account) {
-      try {
-        localStorage.setItem(SESSION_KEY, JSON.stringify({ id: account.id, at: Date.now() }));
-        return true;
-      } catch (err) {
-        return false;
-      }
-    }
-
-    function clearSession() {
-      try {
-        localStorage.removeItem(SESSION_KEY);
-      } catch (err) {
-        /* nothing to do */
+        /* a broken file is replaced by the next save anyway */
       }
     }
 
@@ -530,22 +394,11 @@
         .join("|");
     }
 
-    /* The server stopped publishing passwords, so every account arriving from
-       /api/state has none. Carrying over the secret this device already trusts is
-       what keeps a returning admin able to sign in, and stops each poll from
-       replacing a working login with a blank one. */
-    function keepLocalSecrets(remote, local) {
-      const mine = local || [];
-      const lower = (a) => String(a.username || "").replace(/\s+/g, " ").trim().toLowerCase();
-      return (remote || []).map((account) => {
-        const known = mine.find((a) => String(a.id) === String(account.id));
-        /* A same name under a different id is the same person: a login created on a
-           device that could not reach the board while the board went on and made one
-           anyway. The board decides who exists, so its id wins, and the password typed
-           here is carried across. Without this one student is two logins for good. */
-        const twin = known || mine.find((a) => lower(a) === lower(account) && a.username);
-        return twin && twin.password ? { ...account, password: twin.password } : account;
-      });
+    /* The roster on the board arrives with no secrets, so it simply replaces the
+       cached list. There is nothing to carry over: no device holds a password
+       for anyone any more. */
+    function mergeRemoteAccounts(remote) {
+      return Array.isArray(remote) ? remote.map(normaliseAccount).filter(Boolean) : [];
     }
 
     function itemsFingerprint(items) {
@@ -575,14 +428,20 @@
        screen says which, because they call for different things. */
     let lastFailure = null;
 
+    /* One board call, tried at most twice. A serverless function that has been
+       asleep for a while takes seconds to wake up, and a request cut off during
+       that wake is indistinguishable from a board that is not there: both arrive
+       as nothing at all. Believing the first one is what turned a cold start into
+       "the class board did not answer" and a student locked out of their own
+       account.
+
+       Answers { data, status }: data is the parsed body (null when nothing
+       arrived), status is the HTTP status (0 when nothing arrived). The status
+       matters now that identity lives in a cookie: a 401 is a sign out, not a
+       failed save. The session cookie rides along automatically; this code never
+       sees it and cannot read it. */
     function remoteRequest(path, options) {
       const limit = (options && options.timeout) || 4000;
-      /* One board call, tried at most twice. A serverless function that has been
-         asleep for a while takes seconds to wake up, and a request cut off during
-         that wake is indistinguishable from a board that is not there: both arrive
-         as nothing at all. Believing the first one is what turned a cold start into
-         "the class board did not answer" and a student locked out of their own
-         account. */
       return (async () => {
         for (let attempt = 0; attempt < 2; attempt++) {
           const controller = new AbortController();
@@ -597,29 +456,33 @@
               headers: { "Content-Type": "application/json" },
               body: options ? options.body : undefined,
               signal: controller.signal,
+              credentials: "same-origin",
             });
             const data = await res.json();
             lastFailure = null;
-            return data;
+            return { data, status: res.status };
           } catch (err) {
             lastFailure = late ? "slow" : "unreachable";
           } finally {
             clearTimeout(timer);
           }
         }
-        return null;
+        return { data: null, status: 0 };
       })();
     }
 
     async function remotePull() {
-      const data = await remoteRequest("/state");
+      const { data } = await remoteRequest("/state");
       return data && data.ok ? data : null;
     }
 
-    async function remotePush(type, payload, account) {
-      const data = await remoteRequest("/action", {
+    /* A board write. This code sends no identity of its own: the HttpOnly session
+       cookie authenticates the request and the server re-derives the account and
+       its role from the board on every call. */
+    async function remotePush(type, payload) {
+      const { data, status } = await remoteRequest("/action", {
         method: "POST",
-        body: JSON.stringify({ type, payload, account: account || null }),
+        body: JSON.stringify({ type, payload }),
         /* A write gets longer than a read, because cutting one off at four seconds
            on a weak signal looked exactly like a board that refused it. */
         timeout: 10000,
@@ -629,6 +492,8 @@
          refusal though, and the two have to stay apart: an alert that says a save
          was turned down would be lying about a dropped connection. */
       if (!data) return { ok: false, offline: true, reason: lastFailure === "slow" ? "The class board took too long to answer." : "No connection to the class board." };
+      if (status === 401) return { ok: false, offline: false, sessionLost: true, reason: data.reason || "Your session has expired. Sign in again." };
+      if (status === 429) return { ok: false, offline: false, rateLimited: true, reason: data.reason || "Too many attempts. Try again in a minute." };
       return data.ok
         ? { ok: true, offline: false }
         : { ok: false, offline: false, reason: data.reason || "The server did not accept that change." };
@@ -643,7 +508,7 @@
     async function openRealtime(config, onChange) {
       if (realtimeChannel || !config || !config.url || !config.anonKey) return;
       try {
-        const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.47.10");
+        const { createClient } = await import("@supabase/supabase-js");
         const supabase = createClient(config.url, config.anonKey, { auth: { persistSession: false } });
         realtimeChannel = supabase
           .channel("class-board")
@@ -654,121 +519,128 @@
       }
     }
 
-    /* Confirms a password the visitor typed against the copy that lives on the board.
-       The secret is checked where it is stored, so a device with no local copy, or one
-       whose copy went stale, can still get in without /api/state handing over a
-       password.
+    /* Every auth answer is one of three shapes: agreed (with the safe account
+       fields), refused (with a reason the caller may show), or the board could
+       not be reached. The password travels to exactly one endpoint on this
+       origin, over the same connection as everything else, and is never kept,
+       echoed back or stored anywhere by this code. */
+    function offlineReason() {
+      return lastFailure === "slow"
+        ? "The class board took too long to answer. Try again in a moment."
+        : "This device cannot reach the class board.";
+    }
 
-       Three answers rather than two, because a caller must never confuse a board that
-       said no with a board that could not be reached: agreeing, with the fields worth
-       remembering and never the stored secret; refusing, with its own reason; or not
-       answering at all.
-
-       A claim may carry an id, which every device that has synced has, or a plain
-       username, which is what a device that has never met this login has. Either way
-       the board decides, because the browser is not where the password lives. */
-    async function verifyLogin(claims, adminOnly) {
-      const data = await remoteRequest("/action", {
+    async function authRequest(path, payload) {
+      const { data, status } = await remoteRequest(path, {
         method: "POST",
-        body: JSON.stringify({
-          type: "checkLogin",
-          payload: {
-            adminOnly: Boolean(adminOnly),
-            username: claims && claims.username ? claims.username : undefined,
-          },
-          account: claims || null,
-        }),
+        body: JSON.stringify(payload),
         timeout: 10000,
       });
-      if (!data) {
-        return {
-          ok: false,
-          offline: true,
-          reason:
-            lastFailure === "slow"
-              ? "The class board took too long to answer. Try again in a moment."
-              : "This device cannot reach the class board.",
-        };
-      }
-      if (!data.ok || !data.account) {
-        return { ok: false, offline: false, reason: data.reason || "That password is not right." };
-      }
-      return { ok: true, offline: false, account: data.account };
+      if (!data) return { ok: false, offline: true, reason: offlineReason() };
+      return { ok: Boolean(data.ok), offline: false, status, data };
     }
 
-    /* Creates a login on the board, which is where the password gets hashed and
-       where every other device will meet it. Answers the way verifyLogin does:
-       agreed, refused with a reason, or no answer at all. Nothing is written here,
-       so a refused enrolment leaves no half made account behind. */
-    async function enrol(payload) {
-      const data = await remoteRequest("/action", {
-        method: "POST",
-        body: JSON.stringify({ type: "enrol", payload: payload }),
-        /* A write gets longer than a read. Cutting this one off at four seconds meant
-           the account was made on the board and this device never heard about it,
-           which is how one student ended up with two logins. */
+    /* GET /api/auth/me: who the session cookie says we are, decided entirely on
+       the server. offline means the server could not be asked at all, which is
+       different from being asked and told nobody is signed in. */
+    async function meRequest() {
+      const { data, status } = await remoteRequest("/auth/me");
+      if (!data) return { ok: false, offline: true, reason: offlineReason() };
+      if (data.ok && data.account) return { ok: true, offline: false, account: data.account };
+      return {
+        ok: false,
+        offline: false,
+        status,
+        setup: Boolean(data.setup),
+        reason: data.reason || "",
+      };
+    }
+
+    async function loginRequest(username, password, adminOnly) {
+      const result = await authRequest("/auth/login", { username, password, adminOnly: Boolean(adminOnly) });
+      if (result.offline) return result;
+      if (result.ok && result.data && result.data.account) {
+        return { ok: true, offline: false, account: result.data.account };
+      }
+      return {
+        ok: false,
+        offline: false,
+        setup: Boolean(result.data && result.data.setup),
+        reason: (result.data && result.data.reason) || "That username or password is not right.",
+      };
+    }
+
+    async function registerRequest(username, password, code) {
+      const result = await authRequest("/auth/register", { username, password, code });
+      if (result.offline) return result;
+      if (result.ok && result.data && result.data.account) {
+        return { ok: true, offline: false, account: result.data.account };
+      }
+      return {
+        ok: false,
+        offline: false,
+        reason: (result.data && result.data.reason) || "That account could not be created.",
+      };
+    }
+
+    /* First run only: the server refuses setup forever once any account exists. */
+    async function setupRequest(username, password) {
+      const result = await authRequest("/auth/setup", { username, password });
+      if (result.offline) return result;
+      if (result.ok && result.data && result.data.account) {
+        return { ok: true, offline: false, account: result.data.account };
+      }
+      return {
+        ok: false,
+        offline: false,
+        reason: (result.data && result.data.reason) || "That account could not be created.",
+      };
+    }
+
+    async function changePasswordRequest(current, next) {
+      const result = await authRequest("/auth/change-password", { currentPassword: current, newPassword: next });
+      if (result.offline) return { ok: false, offline: true, reason: result.reason };
+      if (result.ok) return { ok: true };
+      if (result.status === 401) {
+        return { ok: false, sessionLost: true, reason: (result.data && result.data.reason) || "Your session has expired. Sign in again." };
+      }
+      return {
+        ok: false,
+        offline: false,
+        reason: (result.data && result.data.reason) || "Could not save that password.",
+      };
+    }
+
+    async function logoutRequest() {
+      try {
+        await remoteRequest("/auth/logout", { method: "POST", body: "{}", timeout: 6000 });
+      } catch (err) {
+        /* a failed call still leaves the server session to expire on its clock */
+      }
+    }
+
+    /* Admin account operations. The server checks the session's role against the
+       board on every call; nothing on this side can talk its way into an admin
+       action. A successful response carries the refreshed public account list so
+       the cached roster updates at once. */
+    async function adminRequest(method, path, payload) {
+      const { data, status } = await remoteRequest(path, {
+        method,
+        body: payload === undefined ? "{}" : JSON.stringify(payload),
         timeout: 10000,
       });
-      if (!data) {
-        return {
-          ok: false,
-          offline: true,
-          reason:
-            lastFailure === "slow"
-              ? "The class board took too long to answer. Try again in a moment."
-              : "This device cannot reach the class board.",
-        };
+      if (!data) return { ok: false, offline: true, reason: offlineReason() };
+      if (status === 401) {
+        return { ok: false, sessionLost: true, reason: data.reason || "Your session has expired. Sign in again." };
       }
-      if (!data.ok || !data.account) {
-        return { ok: false, offline: false, reason: data.reason || "That account could not be created." };
-      }
-      return { ok: true, offline: false, account: data.account };
+      if (!data.ok) return { ok: false, reason: data.reason || "The server did not accept that." };
+      return { ok: true, accounts: Array.isArray(data.accounts) ? data.accounts : null };
     }
 
-    /* An enrolment the board never acknowledged is kept and sent again the next
-       time the board answers, because the alternative is a login that exists on one
-       phone and nowhere else, which is the whole thing this flow exists to prevent.
-       Nothing new is written down: the password is already in local storage as this
-       account's own. */
-    const PENDING_ENROLMENT_KEY = "bba-section-h-organizer.pending-enrolment.v1";
-
-    function readPendingEnrolment() {
-      try {
-        const raw = localStorage.getItem(PENDING_ENROLMENT_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        return parsed && parsed.username && parsed.password ? parsed : null;
-      } catch (err) {
-        return null;
-      }
-    }
-
-    function writePendingEnrolment(entry) {
-      try {
-        if (entry) localStorage.setItem(PENDING_ENROLMENT_KEY, JSON.stringify(entry));
-        else localStorage.removeItem(PENDING_ENROLMENT_KEY);
-      } catch (err) {
-        /* Storage is a nicety here, never a requirement. */
-      }
-    }
-
-    async function flushPendingEnrolment() {
-      const pending = readPendingEnrolment();
-      if (!pending) return null;
-      const verdict = await enrol(pending);
-      if (!verdict.ok) {
-        /* Offline is worth another go. A refusal is not, so the request is dropped
-           rather than posted again every twelve seconds for ever. Dropping it also
-           covers the name already being taken, where the board has the account after
-           all and the merge turns this copy into it. */
-        if (!verdict.offline) writePendingEnrolment(null);
-        return null;
-      }
-      /* The board now has it. The next merge recognises the same name under the id
-         it named, so the local copy becomes the board's account rather than a twin. */
-      writePendingEnrolment(null);
-      return verdict.account;
-    }
+    /* Registration lives at /api/auth/register now: the password goes straight to
+       the server, is hashed there, and comes back as a signed in session. There
+       is no pending copy waiting in this browser, because a copy waiting in a
+       browser is a password in a browser. */
 
     function adminGateUrl() {
       try {
@@ -1363,7 +1235,7 @@
       );
     }
 
-    function SignInScreen({ onSignIn, onRegister, onOpenAdminGate }) {
+    function SignInScreen({ onSignIn, onRegister, onSetup, onOpenAdminGate, setup, offlineAvailable, onOfflineGuest }) {
       const [mode, setMode] = useState("signin");
       const [form, setForm] = useState({ username: "", password: "", code: "" });
       const [show, setShow] = useState(false);
@@ -1376,6 +1248,17 @@
         const t = setTimeout(() => firstRef.current && firstRef.current.focus(), 120);
         return () => clearTimeout(t);
       }, [mode]);
+
+      /* A board with no accounts yet opens straight into first-run setup. The
+         server accepts exactly one setup request ever, so this form exists only
+         on a brand new board. */
+      useEffect(() => {
+        if (setup && mode !== "setup") {
+          setMode("setup");
+          setError("");
+          setForm({ username: "", password: "", code: "" });
+        }
+      }, [setup, mode]);
 
       function fail(message) {
         setError(message);
@@ -1401,6 +1284,7 @@
       };
 
       function switchMode(next) {
+        if (setup) return; /* there is no account to sign in to yet */
         setMode(next);
         setError("");
         setEscape(false);
@@ -1414,8 +1298,8 @@
         if (!form.password) return fail("Enter your password.");
 
         if (mode === "signin") {
-          /* Awaited because a password with no trusted copy here is checked against
-             the board over the network before it is accepted. */
+          /* Awaited because the board is asked over the network before the password
+             is accepted; the answer is a session cookie, not a stored secret. */
           Promise.resolve(onSignIn(username, form.password)).then((result) => {
             if (!result.ok) {
               setEscape(result.action === "admin-gate");
@@ -1425,17 +1309,26 @@
           return;
         }
 
-        if (form.password.length < 4) return fail("Use at least 4 characters for a password.");
+        if (form.password.length < 8) return fail("Use at least 8 characters for a password.");
+
+        if (mode === "setup") {
+          /* First run: one request, hashed on the server, refused forever after. */
+          Promise.resolve(onSetup(username, form.password)).then((result) => {
+            if (result && !result.ok) fail(result.reason);
+          });
+          return;
+        }
+
         if (!form.code.trim()) return fail("Enter the class code your admin gave you.");
         /* Awaited because the board is asked to create the login, which is the only
-           place the password gets hashed. A local copy alone would sign this student
-           in here and nowhere else. */
+           place the password gets hashed. */
         Promise.resolve(onRegister(username, form.password, form.code.trim())).then((result) => {
           if (result && !result.ok) fail(result.reason);
         });
       }
 
-      const creating = mode === "register";
+      const setupMode = mode === "setup";
+      const creating = mode === "register" || setupMode;
 
       return (
         <div className="relative flex min-h-screen items-center justify-center px-4 py-10">
@@ -1451,9 +1344,11 @@
                 BBA Section H Organizer
               </h1>
               <p className="mx-auto mt-2 max-w-xs text-center text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-                {creating
-                  ? "Create your login with the class code, then add your assignments to the class board."
-                  : "Sign in to add your assignments to the Section H board."}
+                {setupMode
+                  ? "This board is brand new. Create the first account; it becomes the admin."
+                  : creating
+                    ? "Create your login with the class code, then add your assignments to the class board."
+                    : "Sign in to add your assignments to the Section H board."}
               </p>
 
               <form onSubmit={submit} className="mt-7 space-y-4" noValidate key={mode}>
@@ -1482,7 +1377,7 @@
                       type={show ? "text" : "password"}
                       value={form.password}
                       onChange={(e) => set("password")(e.target.value)}
-                      placeholder={creating ? "At least 4 characters" : "Your password"}
+                      placeholder={creating ? "At least 8 characters" : "Your password"}
                       autoComplete={creating ? "new-password" : "current-password"}
                       aria-invalid={error ? "true" : undefined}
                       aria-describedby={error ? "signin-password-message" : undefined}
@@ -1499,7 +1394,7 @@
                   </div>
                 </Field>
 
-                {creating && (
+                {mode === "register" && (
                   <Field id="signin-code" label="Class code" hint="Ask your admin if you do not have it.">
                     <div className="relative">
                       <ShieldCheck size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
@@ -1519,10 +1414,20 @@
 
                 <button type="submit" className={`${BTN_PRIMARY} group w-full py-3`}>
                   {creating ? <UserPlus size={16} /> : <LogIn size={16} />}
-                  {creating ? "Create my account" : "Sign in"}
+                  {setupMode ? "Create the admin account" : creating ? "Create my account" : "Sign in"}
                   <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
                 </button>
               </form>
+
+              {offlineAvailable && (
+                <button
+                  type="button"
+                  onClick={onOfflineGuest}
+                  className="mt-4 w-full cursor-pointer rounded-xl border border-slate-200/80 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-emerald-300 hover:text-emerald-700 dark:border-slate-700 dark:text-slate-300 dark:hover:border-emerald-500/40 dark:hover:text-emerald-300"
+                >
+                  View the saved board (offline, read only)
+                </button>
+              )}
 
               {escape && (
                 <button
@@ -1540,7 +1445,7 @@
                 onClick={() => switchMode(creating ? "signin" : "register")}
                 className="mt-4 w-full cursor-pointer rounded-xl py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
               >
-                {creating ? "Already have an account? Sign in" : "New here? Create an account"}
+                {setupMode ? "One account creates the board admin" : creating ? "Already have an account? Sign in" : "New here? Create an account"}
               </button>
 
               <div className="mt-5 flex items-center justify-center gap-2 border-t border-slate-200/80 pt-5 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
@@ -1588,7 +1493,7 @@
         const found = {};
         if (!pw.current) found.current = "Enter your current password.";
         if (!pw.next) found.next = "Choose a new password.";
-        else if (pw.next.length < 4) found.next = "Use at least 4 characters.";
+        else if (pw.next.length < 8) found.next = "Use at least 8 characters.";
         else if (pw.next === pw.current) found.next = "Pick something different.";
         if (pw.confirm !== pw.next) found.confirm = "The two passwords do not match.";
 
@@ -2826,7 +2731,7 @@
         setNotice(adminUrl);
       }
 
-      function addAccount(event) {
+      async function addAccount(event) {
         event.preventDefault();
         const username = draft.username.replace(/\s+/g, " ").trim();
         setError("");
@@ -2837,16 +2742,17 @@
           setError("That username is already taken.");
           return;
         }
-        if (draft.password.length < 4) { setError("Give them a password of at least 4 characters."); return; }
-        if (!onAddAccount({ username, password: draft.password, role: draft.role })) {
-          setError("Could not save. Browser storage is unavailable.");
+        if (draft.password.length < 8) { setError("Give them a password of at least 8 characters."); return; }
+        /* The server answers with the refreshed roster or a reason, which is
+           notified above; this form only moves on when the board agreed. */
+        if (!(await onAddAccount({ username, password: draft.password, role: draft.role }))) {
           return;
         }
         setDraft({ username: "", password: "", role: "student" });
         setNotice(username + " can sign in now");
       }
 
-      function commitRename(id) {
+      async function commitRename(id) {
         const name = renameValue.replace(/\s+/g, " ").trim();
         setError("");
         if (name.length < 2 || name.length > 24) { setError("Usernames need between 2 and 24 characters."); return; }
@@ -2854,15 +2760,15 @@
           setError("That username is already taken.");
           return;
         }
-        if (!onRenameAccount(id, name)) { setError("Could not save. Browser storage is unavailable."); return; }
+        if (!(await onRenameAccount(id, name))) return;
         setRenaming(null);
         setNotice("Renamed to " + name);
       }
 
-      function commitPassword(id) {
+      async function commitPassword(id) {
         setError("");
-        if (pwValue.length < 4) { setError("Passwords need at least 4 characters."); return; }
-        if (!onSetAccountPassword(id, pwValue)) { setError("Could not save. Browser storage is unavailable."); return; }
+        if (pwValue.length < 8) { setError("Passwords need at least 8 characters."); return; }
+        if (!(await onSetAccountPassword(id, pwValue))) return;
         setPwFor(null);
         setPwValue("");
         setNotice("Password reset");
@@ -2945,7 +2851,7 @@
                   type="text"
                   value={draft.password}
                   onChange={(e) => { setDraft({ ...draft, password: e.target.value }); setError(""); }}
-                  placeholder="At least 4 characters"
+                  placeholder="At least 8 characters"
                   autoComplete="off"
                   className={INPUT}
                 />
@@ -3053,7 +2959,7 @@
                       </p>
                       <button
                         type="button"
-                        onClick={() => { setDropFor(null); onDeleteAccount(a.id); }}
+                        onClick={async () => { setDropFor(null); await onDeleteAccount(a.id); }}
                         disabled={countFor(a.id) > 0}
                         className={miniBtn + " mb-0 border-0 bg-rose-600 text-white ring-0 hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-40"}
                       >
@@ -3075,7 +2981,7 @@
                       </button>
                       <button
                         type="button"
-                        onClick={() => onSetRole(a.id, a.role === "admin" ? "student" : "admin")}
+                        onClick={async () => { await onSetRole(a.id, a.role === "admin" ? "student" : "admin"); }}
                         disabled={lastAdmin}
                         title={lastAdmin ? "The class needs at least one admin" : ""}
                         className={miniBtn}
@@ -3111,7 +3017,6 @@
       const [pwErrors, setPwErrors] = useState({});
       const [saved, setSaved] = useState(false);
       const [pwBusy, setPwBusy] = useState(false);
-      const [reveal, setReveal] = useState(false);
       const [newSubject, setNewSubject] = useState("");
       const [editing, setEditing] = useState(null);
       const [editValue, setEditValue] = useState("");
@@ -3127,7 +3032,6 @@
         setPwErrors({});
         setSaved(false);
         setPwBusy(false);
-        setReveal(false);
         setNewSubject("");
         setEditing(null);
         setFormError("");
@@ -3148,7 +3052,7 @@
         const found = {};
         if (!pw.current) found.current = "Enter your current password.";
         if (!pw.next) found.next = "Choose a new password.";
-        else if (pw.next.length < 4) found.next = "Use at least 4 characters.";
+        else if (pw.next.length < 8) found.next = "Use at least 8 characters.";
         else if (pw.next === pw.current) found.next = "Pick something different from the current password.";
         if (pw.confirm !== pw.next) found.confirm = "The two passwords do not match.";
 
@@ -3246,26 +3150,6 @@
 
           {tab === "password" && (
             <form onSubmit={savePassword} className="mt-6 grid gap-4 sm:grid-cols-2" noValidate>
-              <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3.5 py-2.5 sm:col-span-2 dark:border-slate-700 dark:bg-slate-900/60">
-                <span className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                  <ShieldCheck size={14} className="text-emerald-500" />
-                  Current password
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    {reveal ? account.password : "••••••••"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setReveal((r) => !r)}
-                    aria-label={reveal ? "Hide password" : "Show password"}
-                    className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
-                  >
-                    {reveal ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                </span>
-              </div>
-
               <Field id="current-password" label="Current password" error={pwErrors.current} className="sm:col-span-2">
                 <input
                   id="current-password"
@@ -3280,7 +3164,7 @@
                 />
               </Field>
 
-              <Field id="new-password" label="New password" error={pwErrors.next} hint="At least 4 characters.">
+              <Field id="new-password" label="New password" error={pwErrors.next} hint="At least 8 characters.">
                 <input
                   id="new-password"
                   type="text"
@@ -3780,15 +3664,14 @@
                     see it yet.
                   </p>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {/* A refused save is often a device holding a password the board
-                        has moved on from, and that has a repair: drop the local copy
-                        and let the sign in screen ask the board instead. */}
+                    {/* A refusal with a session that expired has one repair: sign in
+                        again, which mints a fresh cookie. */}
                     <button
                       type="button"
                       onClick={onReverifyDevice}
                       className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 dark:text-rose-200 dark:hover:bg-rose-500/20"
                     >
-                      Re-verify this device
+                      Sign in again
                     </button>
                     <button
                       type="button"
@@ -4064,6 +3947,12 @@
 
     function App() {
       const [account, setAccount] = useState(null);
+      /* Offline visitor: the board could not be reached at sign in, so the saved
+         copy is shown read only. A guest state, not a session: it carries no
+         role, grants nothing, and is never persisted. */
+      const [guest, setGuest] = useState(false);
+      const [offlineBoot, setOfflineBoot] = useState(false);
+      const [needsSetup, setNeedsSetup] = useState(false);
       const [gate, setGate] = useState(readGate);
       const remoteOn = useRef(false);
       const lastRemoteItems = useRef("");
@@ -4081,19 +3970,23 @@
          rather than the protection. */
       const isAdmin = Boolean(account && account.role === "admin");
 
-      /* Every write carries the signed in admin's credentials, because the server
-         verifies them. A refusal is surfaced instead of swallowed, so a rejected
-         change is never mistaken for a saved one. */
-      const upload = (type, payload, creds) => {
-        if (!account) return;
-        /* creds lets one write authenticate with a password the board has just agreed
-           to, rather than the copy this device happens to be holding, which is what
-           lets a change land on a device whose copy had drifted. */
-        remotePush(type, payload, creds || { id: account.id, password: account.password }).then((result) => {
+      /* Every write rides the session cookie; the server decides whether the
+         caller may make it. A refusal is surfaced instead of swallowed, so a
+         rejected change is never mistaken for a saved one, and a 401 ends the
+         session instead of raising an error only a sign in screen can fix. */
+      const upload = (type, payload) => {
+        if (!account || account.guest) return;
+        remotePush(type, payload).then((result) => {
           if (result.ok) {
             /* A save that lands means the board is current again. */
             offlineNotice.current = 0;
             setSaveError(null);
+            return;
+          }
+          if (result.sessionLost) {
+            setAccount(null);
+            setGuest(false);
+            notify("Your session has expired. Sign in again.", "info");
             return;
           }
           if (result.offline) {
@@ -4158,9 +4051,6 @@
       useEffect(() => {
         let alive = true;
         (async () => {
-          /* Anything left over from a join the board missed goes first, so the pull
-             below already contains it. */
-          await flushPendingEnrolment();
           const state = await remotePull();
           if (!alive || !state) return;
           remoteOn.current = true;
@@ -4172,7 +4062,7 @@
             : [];
           if (remoteAccounts.length) {
             setConfig((current) => {
-              const merged = keepLocalSecrets(remoteAccounts, current.accounts);
+              const merged = mergeRemoteAccounts(remoteAccounts);
               lastRemoteAccounts.current = accountsFingerprint(merged);
               return normaliseConfig({
                 subjects: (state.config && state.config.subjects) || current.subjects,
@@ -4200,7 +4090,6 @@
          renders still compares against the current items rather than a stale copy. */
       const syncFromRemote = async () => {
         if (!remoteOn.current) return;
-        await flushPendingEnrolment();
         const state = await remotePull();
         if (!state) return;
         const rawRemote = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
@@ -4225,7 +4114,7 @@
           : [];
         if (remoteAccounts.length) {
           setConfig((current) => {
-            const merged = keepLocalSecrets(remoteAccounts, current.accounts);
+            const merged = mergeRemoteAccounts(remoteAccounts);
             const afp = accountsFingerprint(merged);
             if (accountsFingerprint(current.accounts) === afp) return current;
             lastRemoteAccounts.current = afp;
@@ -4242,15 +4131,26 @@
         return () => clearInterval(timer);
       }, []);
 
-      /* One session key for both sites. The college quiz app writes the same key on
-         the same origin, so signing in there lands here already signed in. */
+      /* The session lives in an HttpOnly cookie this code cannot read or write;
+         the server is the only thing that can say who is signed in. A network
+         failure is not a sign out: it offers the saved board read only instead,
+         and a board with no accounts yet offers the first-run setup. */
       useEffect(() => {
-        const session = loadSession();
-        if (!session) return;
-        const found = config.accounts.find((a) => a.id === session.id);
-        if (found) setAccount(found);
-        else clearSession();
-      }, [config.accounts]);
+        let alive = true;
+        (async () => {
+          /* Credentials from older versions leave this browser first, silently. */
+          purgeLegacySecrets();
+          const me = await meRequest();
+          if (!alive) return;
+          if (me.ok) setAccount(me.account);
+          else if (me.offline) setOfflineBoot(true);
+          else if (me.setup) setNeedsSetup(true);
+        })();
+        return () => {
+          alive = false;
+        };
+        /* Mount only: sign in, sign out and expiry all update state directly. */
+      }, []);
 
       /* The refused-save warning belongs to whoever hit the refusal. Tying it to the
          login id rather than the account object means it clears on every handover,
@@ -4268,7 +4168,7 @@
           const key = event.key;
           if (!key || key === STORAGE_KEY) refreshBoard();
           if (!key || key === DELETED_KEY) setDeletedIds(loadDeleted());
-          if (!key || key === CONFIG_KEY || key === SESSION_KEY) syncAccounts();
+          if (!key || key === CONFIG_KEY) syncAccounts();
         };
         window.addEventListener("storage", onStorage);
         return () => window.removeEventListener("storage", onStorage);
@@ -4325,232 +4225,198 @@
         );
       }, [config.accounts, items]);
 
-      function commitAccounts(nextAccounts, extra, options) {
-        const next = { ...config, accounts: nextAccounts, ...(extra || {}) };
-        if (!commitConfig(next)) return false;
+      /* The roster this device remembers: public fields only. The server owns the
+         real list; admin actions replace this copy from the server's response, so
+         what the UI shows is always what the board confirmed. */
+      function setAccounts(nextAccounts) {
+        const next = { ...config, accounts: nextAccounts };
+        if (!saveConfig(next)) return false;
         setConfig(next);
-        const opts = options || {};
-        /* force exists for a password, which accountsFingerprint deliberately ignores:
-           a change that touched nothing else would look like there was nothing to
-           send, and the board would go on holding the old secret. */
-        const changed = accountsFingerprint(nextAccounts) !== lastRemoteAccounts.current;
-        if (remoteOn.current && isAdmin && (opts.force || changed)) {
-          upload("saveAccounts", nextAccounts, opts.creds);
-        }
-        /* Keep the signed in copy in step, so a password change takes effect at once. */
         setAccount((current) => {
           if (!current) return current;
           const found = nextAccounts.find((a) => a.id === current.id);
-          return found || current;
+          return found ? { ...current, ...found } : current;
         });
         return true;
       }
 
+      /* Sign in: username and password go to /api/auth/login on this origin, the
+         server checks the stored hash and answers with a session cookie this code
+         never sees, plus the public account fields. Nothing about identity is
+         decided locally any more; the local roster is only a UI cache. */
       function signIn(username, password, options) {
         const adminOnly = Boolean(options && options.adminOnly);
-        const name = username.replace(/\s+/g, " ").trim();
-        const found = config.accounts.find((a) => a.username.toLowerCase() === name.toLowerCase());
-        if (!found || !found.password) {
-          /* Either this browser has never heard of the login, or it has and holds no
-             secret for it. Neither is an answer: the board keeps every class login,
-             so ask it by id when there is one and by name when there is not, rather
-             than telling a classmate they do not exist because this phone is new. */
-          return verifyLogin(found ? { id: found.id, password } : { username: name, password }, adminOnly).then((verdict) => {
-            if (!verdict.ok) {
-              let reason;
-              if (verdict.offline) {
-                reason = verdict.reason || "The class board could not be asked about that password.";
-              } else if (!found) {
-                reason = verdict.reason || "No login called " + name + " is on the class board.";
-              } else if (adminOnly) {
-                reason = "That admin login is not correct.";
-              } else {
-                reason = "That password is not right for " + found.username + ".";
-              }
-              return { ok: false, reason };
-            }
-            const who = verdict.account;
-            /* The same role rule as the local path, so a student cannot unlock the
-               admin gate by arriving on a device that has never seen the list. */
-            if (adminOnly && who.role !== "admin") {
-              return { ok: false, reason: "That is a student login. Use the class sign in instead." };
-            }
-            if (!adminOnly && who.role === "admin") {
-              return { ok: false, reason: "Admin accounts unlock from the admin gate.", action: "admin-gate" };
-            }
-            const adopted = {
-              id: who.id,
-              username: who.username,
-              password,
-              role: who.role,
-              createdAt: who.createdAt,
-              lastSeen: Date.now(),
-            };
-            const known = config.accounts.some((a) => String(a.id) === String(who.id));
-            commitAccounts(known
-              ? config.accounts.map((a) => (String(a.id) === String(who.id) ? adopted : a))
-              : [...config.accounts, adopted]);
-            setAccount(adopted);
-            saveSession(adopted);
+        const name = String(username || "").replace(/\s+/g, " ").trim();
+        if (!name || !password) {
+          return { ok: false, reason: "Enter your username and password." };
+        }
+        return loginRequest(name, password, adminOnly).then((verdict) => {
+          if (verdict.ok) {
+            setAccount(verdict.account);
+            setGuest(false);
+            setOfflineBoot(false);
+            setNeedsSetup(false);
             return { ok: true };
-          });
-        }
-        if (found.password !== password) {
-          return {
-            ok: false,
-            reason: adminOnly
-              ? "That admin login is not correct."
-              : "That password is not right for " + found.username + ".",
-          };
-        }
-        if (adminOnly && found.role !== "admin") {
-          return { ok: false, reason: "That is a student login. Use the class sign in instead." };
-        }
-        if (!adminOnly && found.role === "admin") {
-          return { ok: false, reason: "Admin accounts unlock from the admin gate.", action: "admin-gate" };
-        }
-        commitAccounts(
-          config.accounts.map((a) => (a.id === found.id ? { ...a, lastSeen: Date.now() } : a))
-        );
-        setAccount(found);
-        saveSession(found);
-        return { ok: true };
+          }
+          if (verdict.setup) {
+            setNeedsSetup(true);
+            return {
+              ok: false,
+              setup: true,
+              reason: "This board has no account yet. Create the first one below.",
+            };
+          }
+          return { ok: false, offline: Boolean(verdict.offline), reason: verdict.reason };
+        });
       }
 
-      /* A classmate joining.
-
-         The board is asked to create the login rather than this device quietly
-         keeping one, because a login that exists in a single browser is not a class
-         login: the student signs in here and nowhere else, and no admin ever sees
-         them. The server also names the account, so its id is adopted afterwards and
-         the two copies stay one student instead of becoming two.
-
-         With no board to answer there is nowhere to store a login, so the account is
-         kept on this device as before and the board picks it up if an admin ever
-         adds it by hand. */
+      /* Registration: username, password and the class code go to the server,
+         which checks the code, hashes the password and answers with an already
+         signed in session. The checks below are only the quick kind; the server
+         repeats every one of them, and a refusal comes back as its reason. */
       async function register(username, password, code) {
-        const name = username.replace(/\s+/g, " ").trim();
+        const name = String(username || "").replace(/\s+/g, " ").trim();
         if (name.length < 2) return { ok: false, reason: "Usernames need 2 to 24 characters." };
-        if (!password || password.length < 4) {
-          return { ok: false, reason: "Use at least 4 characters for a password." };
+        if (!password || password.length < 8) {
+          return { ok: false, reason: "Use at least 8 characters for a password." };
         }
-        if (code.trim().toLowerCase() !== config.classCode.trim().toLowerCase()) {
-          return { ok: false, reason: "That class code is not right." };
-        }
-        if (config.accounts.some((a) => a.username.toLowerCase() === name.toLowerCase())) {
-          return { ok: false, reason: "That username is already taken. Try signing in." };
-        }
+        if (!String(code || "").trim()) return { ok: false, reason: "Enter the class code." };
 
-        const verdict = await enrol({ username: name, password, code });
-        if (verdict && !verdict.ok && !verdict.offline) return { ok: false, reason: verdict.reason };
-
-        const made = verdict && verdict.ok ? verdict.account : null;
-        const fresh = {
-          id: made ? made.id : uid(),
-          username: name,
-          password,
-          role: "student",
-          createdAt: made ? made.createdAt : Date.now(),
-          lastSeen: Date.now(),
-        };
-        if (!commitAccounts([...config.accounts, fresh])) {
-          return { ok: false, reason: "Could not save. Browser storage is unavailable." };
+        const verdict = await registerRequest(name, password, String(code).trim());
+        if (verdict.ok) {
+          setAccount(verdict.account);
+          setGuest(false);
+          setOfflineBoot(false);
+          setNeedsSetup(false);
+          return { ok: true };
         }
-        setAccount(fresh);
-        saveSession(fresh);
-        /* If the board never answered, the account exists here and nowhere else.
-           Keeping the request means it is sent the moment the board is back, rather
-           than leaving a classmate signed in to a login nobody else can see. */
-        if (!made) writePendingEnrolment({ username: name, password, code });
-        return { ok: true, offline: !made };
+        return { ok: false, offline: Boolean(verdict.offline), reason: verdict.reason };
+      }
+
+      /* First run: no account exists yet, so the server accepts exactly one setup
+         request and refuses every one after it. */
+      async function setupFirstAdmin(username, password) {
+        const verdict = await setupRequest(username, password);
+        if (verdict.ok) {
+          setAccount(verdict.account);
+          setNeedsSetup(false);
+          setOfflineBoot(false);
+          setGuest(false);
+          return { ok: true };
+        }
+        return { ok: false, offline: Boolean(verdict.offline), reason: verdict.reason };
+      }
+
+      /* Offline: the last saved copy, read only, with no role and no privileges.
+         A guest view, not a session: nothing is persisted and nothing is sent. */
+      function enterOfflineGuest() {
+        setAccount({ id: "", username: "Offline visitor", role: "student", guest: true, createdAt: 0, lastSeen: 0 });
+        setGuest(true);
+        notify("Viewing the saved board, read only", "info");
       }
 
       function signOut() {
         setAccount(null);
-        clearSession();
+        setGuest(false);
+        /* The cookie is the session: ask the server to burn the row behind it. */
+        logoutRequest();
         notify("Signed out", "info");
       }
 
-      /* The repair for a device whose saved password no longer matches the board. Every
-         write it makes will be refused, and the honest fix is to stop trusting the
-         copy this device is holding: drop it and the session, so the sign in screen
-         asks the board instead of comparing against something stale. Nothing is lost
-         doing it, because the password was never only here. */
+      /* Offered when a save was refused because the session is no longer good. The
+         fix is the same as any expired session: sign in again, which mints a fresh
+         cookie. There is no local copy left to repair. */
       function reverifyDevice() {
-        if (!account) return;
-        const next = {
-          ...config,
-          accounts: config.accounts.map((a) => (a.id === account.id ? { ...a, password: "" } : a)),
-        };
-        if (!commitConfig(next)) {
-          notify("This browser will not let go of the saved copy. Sign out, then sign in again.", "danger");
-          return;
-        }
-        setConfig(next);
+        logoutRequest();
         setAccount(null);
-        clearSession();
+        setGuest(false);
         setSaveError(null);
-        notify("Sign in again with the password the class board holds", "info");
+        notify("Sign in again to carry on saving", "info");
       }
 
-      /* Changes the signed in person's own password.
-
-         The current one is checked against the board rather than against the copy
-         this device happens to be holding, because that copy is exactly what drifts:
-         an admin who set the password elsewhere, or on another device, was told their
-         own password was wrong while the board accepted it, and had no way past it.
-
-         The write is then sent with the password the board just agreed to, and forced
-         out rather than left to the fingerprint, so it is authorised instead of
-         refused. With no board to ask there is nobody else who could say yes, so the
-         local copy decides, which is how this has always worked offline. */
+      /* Changing your own password: current and new go to the server over the
+         session, which verifies the stored hash, validates and hashes the new one,
+         and signs out every other device holding the old credential. */
       async function changeOwnPassword(current, next) {
-        if (!account) return { ok: false, reason: "Sign in before changing a password." };
-        const verdict = await verifyLogin({ id: account.id, password: current }, account.role === "admin");
-        if (!verdict.ok && !verdict.offline) return { ok: false, reason: verdict.reason };
-        if (!verdict.ok && current !== account.password) {
-          return { ok: false, reason: "That is not your current password." };
+        if (!account || account.guest) return { ok: false, reason: "Sign in before changing a password." };
+        if (!current) return { ok: false, reason: "Enter your current password." };
+        if (!next || next.length < 8) return { ok: false, reason: "Use at least 8 characters for a new password." };
+        const verdict = await changePasswordRequest(current, next);
+        if (verdict.ok) return { ok: true };
+        if (verdict.sessionLost) {
+          setAccount(null);
+          setGuest(false);
+          return { ok: false, reason: "Your session has expired. Sign in again." };
         }
-        const creds = verdict.ok ? { id: account.id, password: current } : null;
-        const nextAccounts = config.accounts.map((a) => (a.id === account.id ? { ...a, password: next } : a));
-        if (!commitAccounts(nextAccounts, undefined, { force: true, creds })) {
-          return { ok: false, reason: "Could not save. Browser storage is unavailable." };
-        }
-        return { ok: true };
+        return { ok: false, reason: verdict.reason || "Could not save that password." };
       }
 
-      function addAccount({ username, password, role }) {
-        /* A student who joined on their own phone is already on the board under a
-           name, and a second login with the same name is two people who can never
-           tell which is which. */
-        const name = username.replace(/\s+/g, " ").trim();
-        if (config.accounts.some((a) => a.username.toLowerCase() === name.toLowerCase())) {
-          notify("Someone with that name is already on the list", "danger");
+      /* Account administration, all of it on the server: each function sends the
+         operation, the server checks the session's role against the board, and the
+         refreshed public roster comes back. Nothing here can approve itself. */
+      function adminOutcome(result, fallback) {
+        if (result.sessionLost) {
+          setAccount(null);
+          setGuest(false);
+          notify("Your session has expired. Sign in again.", "info");
           return false;
         }
-        return commitAccounts([...config.accounts, { id: uid(), username: name, password, role, createdAt: Date.now(), lastSeen: 0 }]);
-      }
-
-      function renameAccount(id, username) {
-        const ok = commitAccounts(config.accounts.map((a) => (a.id === id ? { ...a, username } : a)));
-        if (ok) {
-          setItems((prev) => prev.map((item) => (item.ownerId === id ? { ...item, ownerName: username } : item)));
+        if (!result.ok) {
+          notify(result.reason || fallback, "danger");
+          return false;
         }
-        return ok;
+        if (result.accounts) setAccounts(result.accounts);
+        return true;
       }
 
-      function setAccountRole(id, role) {
-        return commitAccounts(config.accounts.map((a) => (a.id === id ? { ...a, role } : a)));
+      async function addAccount({ username, password, role }) {
+        /* A student who joined on their own phone is already on the board under a
+           name, and a second login with the same name is two people who can never
+           tell which is which. The server enforces that rule as well. */
+        const name = String(username || "").replace(/\s+/g, " ").trim();
+        const result = await adminRequest("POST", "/api/admin/accounts", {
+          username: name,
+          password,
+          role,
+        });
+        return adminOutcome(result, "That login could not be created.");
       }
 
-      function setAccountPassword(id, password) {
-        /* A password leaves every field the fingerprint looks at untouched, so this
-           has to say so. Otherwise the reset looks like it worked on this device
-           while the board carries on with the old one. */
-        return commitAccounts(config.accounts.map((a) => (a.id === id ? { ...a, password } : a)), undefined, { force: true });
+      async function renameAccount(id, username) {
+        const name = String(username || "").replace(/\s+/g, " ").trim();
+        const result = await adminRequest("PATCH", "/api/admin/accounts/" + encodeURIComponent(id), {
+          username: name,
+        });
+        if (!adminOutcome(result, "That login could not be renamed.")) return false;
+        /* The author line on their cards follows the rename at once here; the
+           board's copy is rewritten server side too, so every device agrees. */
+        setItems((prev) => prev.map((item) => (item.ownerId === id ? { ...item, ownerName: name } : item)));
+        return true;
       }
 
-      function deleteAccount(id) {
+      async function setAccountRole(id, role) {
+        const result = await adminRequest("PATCH", "/api/admin/accounts/" + encodeURIComponent(id), {
+          role,
+        });
+        return adminOutcome(result, "That role could not be changed.");
+      }
+
+      async function setAccountPassword(id, password) {
+        /* The one place one login sets another's secret, and it never enters this
+           device's storage: the new password goes straight to the server, which
+           hashes it and signs that account out everywhere. */
+        const result = await adminRequest(
+          "POST",
+          "/api/admin/accounts/" + encodeURIComponent(id) + "/reset-password",
+          { newPassword: password },
+        );
+        return adminOutcome(result, "That password could not be reset.");
+      }
+
+      async function deleteAccount(id) {
+        /* The server keeps these guards too (an account that still owns
+           assignments cannot go; the last admin cannot go). The local copies only
+           spare a pointless round trip when the answer is already known. */
         if (items.some((item) => item.ownerId === id)) {
           notify("That person still has assignments on the board", "danger");
           return false;
@@ -4559,7 +4425,8 @@
           notify("The class needs at least one admin", "danger");
           return false;
         }
-        return commitAccounts(config.accounts.filter((a) => a.id !== id));
+        const result = await adminRequest("DELETE", "/api/admin/accounts/" + encodeURIComponent(id));
+        return adminOutcome(result, "That login could not be removed.");
       }
 
       function setClassCode(code) {
@@ -4635,14 +4502,8 @@
       function syncAccounts() {
         const fresh = loadConfig();
         setConfig(fresh);
-        const session = loadSession();
-        if (!session) {
-          setAccount(null);
-          return;
-        }
-        const found = fresh.accounts.find((a) => a.id === session.id);
-        if (found) setAccount(found);
-        else clearSession();
+        /* The roster is a cache. Whether the signed in person still exists is the
+           server's answer to make, not something a local file gets to decide. */
       }
 
       function commitConfig(next) {
@@ -4736,7 +4597,15 @@
           ) : gate === "admin" ? (
             <AdminSignIn onSignIn={signIn} onLeave={openClassGate} />
           ) : (
-            <SignInScreen onSignIn={signIn} onRegister={register} onOpenAdminGate={openAdminGate} />
+            <SignInScreen
+              onSignIn={signIn}
+              onRegister={register}
+              onSetup={setupFirstAdmin}
+              onOpenAdminGate={openAdminGate}
+              setup={needsSetup}
+              offlineAvailable={offlineBoot}
+              onOfflineGuest={enterOfflineGuest}
+            />
           )}
           <Toast toast={toast} />
 
@@ -4760,6 +4629,4 @@
     }
 
     createRoot(document.getElementById("root")).render(<App />);
-  </script>
-</body>
-</html>
+  

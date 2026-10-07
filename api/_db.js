@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import ws from 'ws';
+import { hashToken, sessionTokenFrom } from './_security.js';
 
 /**
  * The one place that talks to Supabase. Only these serverless functions ever hold
@@ -76,6 +78,12 @@ export function isConfigured() {
 function client() {
   return createClient(String(process.env.SUPABASE_URL || '').trim(), secretKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
+    /* supabase-js 2.109 constructs its realtime client eagerly and needs a
+       WebSocket implementation to do it: on a Node 20 runtime (Vercel's
+       default) it throws at createClient() and every read of the board fails.
+       ws is the transport the library itself suggests; only the server push
+       doorbell ever opens a socket, ordinary reads and writes stay on fetch. */
+    realtime: { transport: ws },
   });
 }
 
@@ -144,10 +152,12 @@ export function keyRoleHint(key) {
 }
 
 /**
- * A short, non-reversible fingerprint: the key prefix plus length plus the first
- * four characters of the random part. Enough to tell "this is the same key the
- * dashboard shows" from "one character differs", useless to anyone who does not
- * already have the key. Never returns the key.
+ * A short, non-reversible fingerprint: the key prefix and its length. Enough to
+ * tell "this is the same key the dashboard shows" from "a different key was
+ * pasted here", useless to anyone who does not already have the key. Never
+ * returns any characters of the key itself: an earlier version showed the first
+ * four characters of the random part, which is more of a secret than a
+ * diagnostic needs.
  */
 export function keyFingerprint(key) {
   if (!key) return null;
@@ -159,7 +169,6 @@ export function keyFingerprint(key) {
   return {
     prefix: prefix || '(legacy JWT)',
     length: value.length,
-    head: value.slice(prefix.length, prefix.length + 4),
     hasWhitespaceInside: /\s/.test(value),
   };
 }
@@ -251,21 +260,47 @@ export async function readState() {
   return data ? { ...EMPTY, ...data.data } : { ...EMPTY };
 }
 
-/** What the browser is allowed to see. The shared document keeps passwords so an
-    admin can sign in again on a new device, but publishing them would hand every
-    login in the class to anyone who opened /api/state, so they stop here. */
+/**
+ * What the browser is allowed to see. The shared document keeps whatever the
+ * server needs, but only these whitelisted fields ever leave: no password and no
+ * hash, no session material, no server configuration. Everything else is
+ * dropped rather than filtered, so a field added later cannot leak by default.
+ */
 export function publicState(state) {
   const src = state && typeof state === 'object' ? state : {};
   const accounts = Array.isArray(src.accounts) ? src.accounts : [];
+  const config = src.config && typeof src.config === 'object' ? src.config : {};
+  const attendance = Array.isArray(src.attendance) ? src.attendance : [];
   return {
-    ...src,
-    accounts: accounts.map((account) => {
-      if (!account || typeof account !== 'object') return account;
-      const clean = { ...account };
-      delete clean.password;
-      return clean;
-    }),
+    items: Array.isArray(src.items) ? src.items : [],
+    config: {
+      classCode: typeof config.classCode === 'string' ? config.classCode : '',
+      subjects: Array.isArray(config.subjects) ? config.subjects : [],
+      theme: typeof config.theme === 'string' ? config.theme : 'system',
+    },
+    accounts: accounts.map(publicAccount),
+    attendance: attendance.slice(0, 200).map((entry) => ({
+      name: typeof (entry && entry.name) === 'string' ? entry.name : '',
+      mode: typeof (entry && entry.mode) === 'string' ? entry.mode : '',
+      at: Number(entry && entry.at) || 0,
+    })),
   };
+}
+
+/** The public half of an account, exactly the fields the UI needs. */
+export function publicAccount(account) {
+  if (!account || typeof account !== 'object') return account;
+  return {
+    id: account.id,
+    username: account.username,
+    role: account.role === 'admin' ? 'admin' : 'student',
+    createdAt: Number(account.createdAt) || 0,
+    lastSeen: Number(account.lastSeen) || 0,
+  };
+}
+
+export function publicAccounts(list) {
+  return (Array.isArray(list) ? list : []).map(publicAccount);
 }
 
 /* ---- password storage ---------------------------------------------------
@@ -323,37 +358,6 @@ export function withHashedSecrets(state) {
   };
 }
 
-/**
- * Merges the account list a browser sent with the one already stored, keeping every
- * secret the board holds.
- *
- * Since the board stopped publishing passwords, an account arriving from any other
- * device, or enrolled by a classmate, carries no password at all, and one this
- * device never held a copy of arrives blank. A blank therefore means "nothing to say
- * about this one", not "remove the secret", so the stored value is carried across.
- * Without this, an admin adding, renaming or repromoting any login would post a list
- * full of blanks and erase every password on the board, and with hashing in place
- * there would be no way back to the originals. Removing a login is still a delete:
- * an account missing from the incoming list is gone, as it always was.
- */
-export function keepStoredSecrets(incoming, stored) {
-  const list = Array.isArray(incoming) ? incoming : [];
-  const existing = Array.isArray(stored) ? stored : [];
-  return list.map((account) => {
-    if (!account || typeof account !== 'object') return account;
-    if (typeof account.password === 'string' && account.password) return account;
-    const known = existing.find((a) => a && String(a.id) === String(account.id));
-    if (!known || typeof known.password !== 'string' || !known.password) return account;
-    return { ...account, password: known.password };
-  });
-}
-
-/** How many accounts still hold a plain password, so the migration can report it. */
-export function countPlainPasswords(state) {
-  const accounts = (state && state.accounts) || [];
-  return accounts.filter((a) => a && typeof a.password === 'string' && a.password && !isHashed(a.password)).length;
-}
-
 /** Replaces the document. An admin deleting an assignment lands here for everyone. */
 export async function writeState(next) {
   if (!isConfigured()) return false;
@@ -384,22 +388,151 @@ function sameSecret(a, b) {
   return diff === 0;
 }
 
-/**
- * Who is allowed to write. Hiding a button is a courtesy, this is the protection:
- * saveBoard, saveConfig and saveAccounts belong to an admin alone, and attendance
- * only needs a login that is really on the board.
- */
-export async function authorise(claims, needAdmin = true) {
-  if (!claims || !claims.id) return { ok: false, reason: 'Sign in before saving.' };
+/* ---- sessions -----------------------------------------------------------
+   A sign in mints a random token. The browser only ever holds it in an
+   HttpOnly cookie it cannot read; the database keeps just its SHA-256, so
+   neither a database dump nor any script in the page can recover a usable
+   session. Two clocks bound every session: an absolute lifetime and an idle
+   timeout, both enforced here on each request instead of trusted from the
+   client. The role is reloaded from the board on every call, so a demotion
+   takes effect at the next request rather than at the next login. */
 
+const SESSIONS_TABLE = 'class_sessions';
+const SESSION_ABSOLUTE_MS = 30 * 24 * 60 * 60 * 1000;
+const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
+const SESSION_TOUCH_MS = 5 * 60 * 1000;
+
+export function sessionMaxAgeSeconds() {
+  return Math.floor(SESSION_ABSOLUTE_MS / 1000);
+}
+
+function sessions() {
+  return client().from(SESSIONS_TABLE);
+}
+
+/** Mints a session for an account. Returns the raw token exactly once, for the
+    Set-Cookie header; only its hash is ever written to the database. */
+export async function createSession(accountId, meta) {
+  const token = randomBytes(32).toString('base64url');
+  const now = Date.now();
+  const row = {
+    account_id: String(accountId),
+    token_hash: hashToken(token),
+    created_at: new Date(now).toISOString(),
+    last_seen: new Date(now).toISOString(),
+    expires_at: new Date(now + SESSION_ABSOLUTE_MS).toISOString(),
+    user_agent: String((meta && meta.userAgent) || '').slice(0, 200),
+    ip: String((meta && meta.ip) || '').slice(0, 64),
+  };
+  const { error } = await sessions().insert(row);
+  if (error) throw error;
+  return { token, expiresAt: row.expires_at };
+}
+
+/** Looks a session up by token hash, enforcing both clocks. An expired session
+    is deleted on the spot so it cannot linger. */
+export async function findSession(token) {
+  if (!token) return null;
+  const hash = hashToken(token);
+  const { data, error } = await sessions().select('*').eq('token_hash', hash).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const now = Date.now();
+  const expiresAt = Date.parse(data.expires_at);
+  const lastSeen = Date.parse(data.last_seen);
+  if (!Number.isFinite(expiresAt) || now > expiresAt) {
+    await sessions().delete().eq('token_hash', hash);
+    return null;
+  }
+  if (!Number.isFinite(lastSeen) || now - lastSeen > SESSION_IDLE_MS) {
+    await sessions().delete().eq('token_hash', hash);
+    return null;
+  }
+  if (now - lastSeen > SESSION_TOUCH_MS) {
+    /* Slides the idle window forward, at most once per touch interval so an
+       active page does not write a row on every request. */
+    try {
+      await sessions().update({ last_seen: new Date(now).toISOString() }).eq('token_hash', hash);
+    } catch (err) {
+      /* a failed touch only shortens the session, never opens it */
+    }
+  }
+  return data;
+}
+
+/** Invalidates one session. Best effort: a failed delete still clears the
+    cookie, and the row ages out through its own expiry either way. */
+export async function destroySession(token) {
+  if (!token) return;
+  try {
+    await sessions().delete().eq('token_hash', hashToken(token));
+  } catch (err) {
+    /* the session expires on its own if the delete cannot land */
+  }
+}
+
+/** After a password change: every other device is signed out, the device that
+    changed the password stays signed in. */
+export async function destroyOtherSessions(accountId, keepToken) {
+  try {
+    let query = sessions().delete().eq('account_id', String(accountId));
+    if (keepToken) query = query.neq('token_hash', hashToken(keepToken));
+    await query;
+  } catch (err) {
+    /* old sessions still expire on their own clocks */
+  }
+}
+
+/** After an admin resets someone's password: that account is signed out
+    everywhere, because the reset exists precisely because the old credential
+    should no longer work. */
+export async function destroySessionsFor(accountId) {
+  try {
+    await sessions().delete().eq('account_id', String(accountId));
+  } catch (err) {
+    /* expiry is the backstop */
+  }
+}
+
+/**
+ * Resolves the caller from the session cookie alone. Nothing the browser sent
+ * about identity is believed: the account is looked up on the board by the
+ * session's account_id, and its role is whatever the board says right now.
+ *
+ * Returns { ok: true, account, token } or { ok: false, status, reason } where
+ * status is 401 for "no valid session" and 503 when the board itself cannot be
+ * reached (a refusal to guess rather than an accidental allow).
+ */
+export async function authenticate(req) {
+  const token = sessionTokenFrom(req);
+  if (!token) return { ok: false, status: 401, reason: 'Sign in to continue.' };
+  let row;
+  try {
+    row = await findSession(token);
+  } catch (err) {
+    console.error('[api] session lookup failed', err && err.message);
+    return { ok: false, status: 503, reason: 'The class board is unavailable right now.' };
+  }
+  if (!row) return { ok: false, status: 401, reason: 'Your session has expired. Sign in again.' };
   const state = (await readState()) || {};
   const accounts = Array.isArray(state.accounts) ? state.accounts : [];
-  const found = accounts.find((a) => String(a.id) === String(claims.id));
-  if (!found) return { ok: false, reason: 'That login is not on this board any more.' };
-  if (!verifyPassword(found.password, claims.password)) return { ok: false, reason: 'That password is not right.' };
-  if (needAdmin && found.role !== 'admin') return { ok: false, reason: 'Only the admin can change the board.' };
+  const account = accounts.find((a) => String(a && a.id) === String(row.account_id));
+  if (!account) {
+    await destroySession(token);
+    return { ok: false, status: 401, reason: 'That login no longer exists.' };
+  }
+  return { ok: true, account, token, session: row };
+}
 
-  return { ok: true, account: found };
+/** Session first, then the role, loaded from the board. 401 when there is no
+    session, 403 when there is one but it is not an admin. */
+export async function requireAdmin(req) {
+  const auth = await authenticate(req);
+  if (!auth.ok) return auth;
+  if (auth.account.role !== 'admin') {
+    return { ok: false, status: 403, reason: 'Only an admin can change the board.' };
+  }
+  return auth;
 }
 
 /**

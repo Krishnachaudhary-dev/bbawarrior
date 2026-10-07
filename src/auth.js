@@ -1,142 +1,64 @@
 /**
- * Shared single sign-on between this quiz site and the BBA Section H assignment
- * organizer. The organizer is served from public/assignments.html, so both pages
- * run on the same origin and can read the same two localStorage keys:
+ * Sign-in helpers for the quiz site.
  *
- *   bba-section-h-organizer.config.v1   subjects, class code, accounts
- *   bba-section-h-organizer.session.v1  who is signed in, never a password
- *
- * Signing in here writes the session key, so opening the organizer already shows
- * that person signed in, and the reverse works the same way.
+ * Sign in runs against the class board's session API: username and password go
+ * to POST /api/auth/login on this origin, the server checks the stored hash and
+ * answers with an HttpOnly session cookie plus the public account fields. This
+ * file never sees a stored password, never compares one locally, and never
+ * writes a session to localStorage: identity lives on the server, and a browser
+ * that downloads this code learns nothing that helps it become someone else.
  */
 
-export const CONFIG_KEY = 'bba-section-h-organizer.config.v1';
-export const SESSION_KEY = 'bba-section-h-organizer.session.v1';
 export const ORGANIZER_PATH = 'assignments.html';
+
+/**
+ * A UI hint only: it opens the organizer's admin sign in screen. Every
+ * privileged call anywhere in this project is authorised server side against
+ * the session, never against this string.
+ */
 export const ADMIN_HASH = '#admin';
 
-function readJSON(key) {
+async function post(path, payload) {
+  let res;
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
+    res = await fetch((import.meta.env.BASE_URL || '/') + 'api' + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
   } catch (err) {
-    return null;
+    return { ok: false, offline: true, reason: 'The class board could not be reached.' };
   }
-}
-
-function writeJSON(key, value) {
+  let data = null;
   try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
+    data = await res.json();
   } catch (err) {
-    return false;
+    return { ok: false, offline: true, reason: 'The class board did not answer.' };
   }
-}
-
-function tidy(account) {
-  return {
-    id: String(account.id),
-    username: String(account.username),
-    role: account.role === 'admin' ? 'admin' : 'student',
-  };
-}
-
-export function readConfig() {
-  const config = readJSON(CONFIG_KEY);
-  return config && typeof config === 'object' ? config : null;
-}
-
-export function readAccounts() {
-  const config = readConfig();
-  if (!config || !Array.isArray(config.accounts)) return [];
-  return config.accounts.filter((a) => a && a.username);
-}
-
-export function readAdmins() {
-  return readAccounts().filter((a) => a.role === 'admin');
-}
-
-/** The signed in person, or null when nobody is signed in or the account is gone. */
-export function readSession() {
-  const config = readConfig();
-  if (!config || !Array.isArray(config.accounts)) return null;
-  const session = readJSON(SESSION_KEY);
-  if (!session || !session.id) return null;
-  const found = config.accounts.find((a) => String(a.id) === String(session.id));
-  return found ? tidy(found) : null;
-}
-
-/** Checks a class login and, on success, signs the person in on both sites. */
-export function signIn(username, password) {
-  const name = String(username || '').replace(/\s+/g, ' ').trim();
-  if (!name || !password) return { ok: false, reason: 'Enter your username and password.' };
-
-  const config = readConfig();
-  const accounts = Array.isArray(config && config.accounts) ? config.accounts : [];
-  if (!accounts.length) {
+  if (!data || typeof data !== 'object') {
+    return { ok: false, offline: true, reason: 'The class board did not answer.' };
+  }
+  if (!data.ok) {
     return {
       ok: false,
-      reason: 'No class logins saved on this device yet. Open Assignments once, then sign in here.',
-      empty: true,
+      setup: Boolean(data.setup),
+      reason: data.reason || 'The class board refused that sign in.',
     };
   }
-
-  const found = accounts.find((a) => String(a.username).toLowerCase() === name.toLowerCase());
-  if (!found || found.password !== password) {
-    return { ok: false, reason: 'That username and password do not match.' };
-  }
-  if (found.role === 'admin') {
-    return { ok: false, reason: 'Admin accounts sign in from the admin gate.', action: 'admin-gate' };
-  }
-
-  /* Stamp the sign in time the same way the organizer does, then publish the session. */
-  const next = { ...config, accounts: accounts.map((a) => (a.id === found.id ? { ...a, lastSeen: Date.now() } : a)) };
-  if (!writeJSON(CONFIG_KEY, next) || !writeJSON(SESSION_KEY, { id: found.id, at: Date.now() })) {
-    return { ok: false, reason: 'Could not save. Browser storage is unavailable.' };
-  }
-  return { ok: true, account: tidy(found) };
+  return { ok: true, account: data.account };
 }
 
-/** Checks an admin login for the quiz admin panel. */
+/**
+ * Signs in an admin for the quiz panel. The server enforces adminOnly against
+ * the role stored on the board, so this is a convenience check, not the gate.
+ */
 export function signInAdmin(username, password) {
   const name = String(username || '').replace(/\s+/g, ' ').trim();
-  if (!name || !password) return { ok: false, reason: 'Enter your admin username and password.' };
-
-  const config = readConfig();
-  const admins = Array.isArray(config && config.accounts)
-    ? config.accounts.filter((a) => a && a.username && a.role === 'admin')
-    : [];
-  if (!admins.length) {
-    return {
-      ok: false,
-      reason: 'No admin login on this device yet. Open Assignments once, then come back.',
-      empty: true,
-    };
+  if (!name || !password) {
+    return Promise.resolve({ ok: false, reason: 'Enter your admin username and password.' });
   }
-
-  const found = admins.find((a) => String(a.username).toLowerCase() === name.toLowerCase());
-  if (!found || found.password !== password) {
-    return { ok: false, reason: 'That admin username and password are not correct.' };
-  }
-  return { ok: true, account: tidy(found) };
-}
-
-export function signOut() {
-  try {
-    localStorage.removeItem(SESSION_KEY);
-  } catch (err) {
-    /* nothing to clear */
-  }
-}
-
-/** Calls back when another tab on this origin signs in or out. */
-export function watchSession(handler) {
-  const onStorage = (event) => {
-    if (event.key && event.key !== SESSION_KEY && event.key !== CONFIG_KEY) return;
-    handler();
-  };
-  window.addEventListener('storage', onStorage);
-  return () => window.removeEventListener('storage', onStorage);
+  return post('/auth/login', { username: name, password, adminOnly: true });
 }
 
 export function organizerUrl(hash) {
