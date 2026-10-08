@@ -26,6 +26,59 @@
        privileged call is authorised by the server against the session cookie. */
     const ADMIN_HASH = "#admin";
 
+    /* Optimistic session hint.
+
+       The server is still the only thing that can say who is signed in, but it
+       has to be asked over the network, and waiting for the answer put a frame
+       of nothing on every reload. A successful sign in therefore writes this too:
+       the public account fields and a flag, and nothing else — no token, no
+       password, nothing the HttpOnly cookie already carries. The next load reads
+       it synchronously, which puts the dashboard in the very first frame, while
+       /api/auth/me is still fired in the background to confirm it. If that answer
+       is anything but yes the hint is deleted and the sign in screen returns.
+
+       A guess, withdrawn the moment the server disagrees. It grants nothing: every
+       write the dashboard makes is authorised by the server against the cookie,
+       so the worst an attacker holding this object can do is repaint a screen the
+       server will refuse to save to. */
+    const SESSION_HINT_KEY = "bba-section-h-organizer.active-session.v1";
+
+    function saveSessionHint(account) {
+      if (!account || account.guest) return;
+      try {
+        localStorage.setItem(
+          SESSION_HINT_KEY,
+          JSON.stringify({ hasActiveSession: true, account: { ...account } }),
+        );
+      } catch (err) {
+        /* Storage blocked or full: the reload simply boots through the check. */
+      }
+    }
+
+    function readSessionHint() {
+      try {
+        const raw = localStorage.getItem(SESSION_HINT_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.hasActiveSession !== true) return null;
+        const account = parsed.account;
+        if (!account || typeof account !== "object") return null;
+        if (!account.id || !account.username) return null;
+        return account;
+      } catch (err) {
+        /* Corrupt or unreadable: fall back to asking the server first. */
+        return null;
+      }
+    }
+
+    function clearSessionHint() {
+      try {
+        localStorage.removeItem(SESSION_HINT_KEY);
+      } catch (err) {
+        /* Nothing useful to do; the hint will fail validation on the next boot. */
+      }
+    }
+
     /* Everyone signs in with their own login. An admin can manage the class,
        a student can submit work to the shared board. */
     const ROLE_META = {
@@ -4255,7 +4308,9 @@
        ============================================================ */
 
     function App() {
-      const [account, setAccount] = useState(null);
+      /* Read during the first render, not in an effect: a returning visitor is on
+         the dashboard in the same frame the document paints. */
+      const [account, setAccount] = useState(() => readSessionHint());
       /* Offline visitor: the board could not be reached at sign in, so the saved
          copy is shown read only. A guest state, not a session: it carries no
          role, grants nothing, and is never persisted. */
@@ -4263,7 +4318,7 @@
       const [offlineBoot, setOfflineBoot] = useState(false);
       const [needsSetup, setNeedsSetup] = useState(false);
       /* Until /api/auth/me has answered, nobody is known to be signed out. */
-      const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+      const [isCheckingAuth, setIsCheckingAuth] = useState(() => !readSessionHint());
       const [gate, setGate] = useState(readGate);
       const remoteOn = useRef(false);
       const lastRemoteItems = useRef("");
@@ -4295,8 +4350,7 @@
             return;
           }
           if (result.sessionLost) {
-            setAccount(null);
-            setGuest(false);
+            forgetSession();
             notify("Your session has expired. Sign in again.", "info");
             return;
           }
@@ -4491,15 +4545,24 @@
           if (!alive) return;
           /* The check has answered, whichever way it answered. */
           setIsCheckingAuth(false);
-          if (me.ok) setAccount(me.account);
-          else if (me.offline) setOfflineBoot(true);
-          else if (me.setup) setNeedsSetup(true);
+          if (!me.ok) {
+            /* The server does not confirm this device. Whatever was painted from
+               the hint is taken back before anyone has had time to act on it: no
+               account, no dashboard, and nothing left in storage to guess with. */
+            forgetSession();
+            if (me.offline) setOfflineBoot(true);
+            else if (me.setup) setNeedsSetup(true);
+            return;
+          }
+          /* It agrees, so the server answer replaces the guess and becomes the
+             hint the next reload boots from. */
+          setAccount(me.account);
+          saveSessionHint(me.account);
 
           /* The board is asked for only once someone is on it. A visitor stopped
              at the sign in screen has no use for it, and pulling it there was what
              kept that screen busy for seconds after it had appeared. The offline
              copy is already on this device, so it is not fetched either. */
-          if (!me.ok) return;
           await afterFirstPaint();
           if (!alive) return;
           if (joinBoardRef.current) await joinBoardRef.current();
@@ -4612,6 +4675,7 @@
         return loginRequest(name, password, adminOnly).then((verdict) => {
           if (verdict.ok) {
             setAccount(verdict.account);
+            saveSessionHint(verdict.account);
             setGuest(false);
             setOfflineBoot(false);
             setNeedsSetup(false);
@@ -4645,6 +4709,7 @@
         const verdict = await registerRequest(name, password, String(code).trim());
         if (verdict.ok) {
           setAccount(verdict.account);
+          saveSessionHint(verdict.account);
           setGuest(false);
           setOfflineBoot(false);
           setNeedsSetup(false);
@@ -4660,6 +4725,7 @@
         const verdict = await setupRequest(username, password);
         if (verdict.ok) {
           setAccount(verdict.account);
+          saveSessionHint(verdict.account);
           setNeedsSetup(false);
           setOfflineBoot(false);
           setGuest(false);
@@ -4677,9 +4743,16 @@
         notify("Viewing the saved board, read only", "info");
       }
 
-      function signOut() {
+      /* Every path that ends a session also forgets the optimistic flag, or the
+         next reload would paint a dashboard the background check is about to take
+         back. Clearing it here, once, is what keeps the hint honest. */
+      function forgetSession() {
+        clearSessionHint();
         setAccount(null);
         setGuest(false);
+      }
+      function signOut() {
+        forgetSession();
         /* The cookie is the session: ask the server to burn the row behind it. */
         logoutRequest();
         notify("Signed out", "info");
@@ -4690,8 +4763,7 @@
          cookie. There is no local copy left to repair. */
       function reverifyDevice() {
         logoutRequest();
-        setAccount(null);
-        setGuest(false);
+        forgetSession();
         setSaveError(null);
         notify("Sign in again to carry on saving", "info");
       }
@@ -4706,8 +4778,7 @@
         const verdict = await changePasswordRequest(current, next);
         if (verdict.ok) return { ok: true };
         if (verdict.sessionLost) {
-          setAccount(null);
-          setGuest(false);
+          forgetSession();
           return { ok: false, reason: "Your session has expired. Sign in again." };
         }
         return { ok: false, reason: verdict.reason || "Could not save that password." };
@@ -4718,8 +4789,7 @@
          refreshed public roster comes back. Nothing here can approve itself. */
       function adminOutcome(result, fallback) {
         if (result.sessionLost) {
-          setAccount(null);
-          setGuest(false);
+          forgetSession();
           notify("Your session has expired. Sign in again.", "info");
           return false;
         }
