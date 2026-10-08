@@ -932,6 +932,251 @@
       }
     }
 
+    /* ---------------------------------------------------------------
+       Answer export
+
+       The answer lives as a block of text plus attached pictures, but the
+       only way to keep a copy was to copy the text and save the pictures
+       one at a time. These helpers compose the whole answer into a single
+       file, drawn on a canvas in this browser: nothing is uploaded and no
+       third party ever sees it.
+
+       The PDF is built from the same canvas as the PNG, so the two formats
+       can never disagree about what the answer looked like. No library is
+       pulled in for either one.
+       --------------------------------------------------------------- */
+
+    const EXPORT_WIDTH = 1040;
+    const EXPORT_PAD = 56;
+    const EXPORT_FONT = "system-ui, -apple-system, 'Segoe UI', Segoe UI, Roboto, sans-serif";
+
+    /* Greedy wrap that still honours the author's own line breaks. A word
+       longer than the column keeps its own line rather than being cut,
+       which would change what the answer says. */
+    function wrapExportLines(ctx, text, maxWidth) {
+      const lines = [];
+      String(text == null ? "" : text).split("\n").forEach((raw) => {
+        if (!raw.trim()) { lines.push(""); return; }
+        const words = raw.trim().split(/\s+/);
+        let line = "";
+        words.forEach((word) => {
+          const probe = line ? line + " " + word : word;
+          if (!line || ctx.measureText(probe).width <= maxWidth) { line = probe; return; }
+          lines.push(line);
+          line = word;
+        });
+        if (line) lines.push(line);
+      });
+      return lines;
+    }
+
+    function saveBlob(blob, name) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+
+    function exportFileName(item, ext) {
+      const base = String((item && item.title) || "answer").toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40);
+      return (base || "assignment") + "-answer." + ext;
+    }
+
+    /* A canvas cannot rasterise a PDF, so attached documents are left out
+       of the picture rather than drawn as a broken box. They keep their own
+       download control in the card. */
+    function loadExportImage(src) {
+      return new Promise((resolve) => {
+        if (isPdf(src)) { resolve(null); return; }
+        const img = new Image();
+        img.onload = () => resolve(img.naturalWidth ? img : null);
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+    }
+
+    async function buildAnswerCanvas(item) {
+      const inner = EXPORT_WIDTH - EXPORT_PAD * 2;
+      const title = String((item && item.title) || "Assignment");
+      const meta = [item.subject, item.dueDate].filter(Boolean).join("   ·   ");
+      const body = String(item.solution || "");
+
+      const probe = document.createElement("canvas").getContext("2d");
+      probe.font = "700 30px " + EXPORT_FONT;
+      const titleLines = wrapExportLines(probe, title, inner);
+      probe.font = "400 17px " + EXPORT_FONT;
+      const bodyLines = wrapExportLines(probe, body, inner);
+
+      const pictures = [];
+      for (const src of item.solutionImages || []) {
+        const img = await loadExportImage(src);
+        if (img) pictures.push(img);
+      }
+
+      const TITLE_LEAD = 38;
+      const BODY_LEAD = 27;
+      const FOOTER = 46;
+
+      let height = EXPORT_PAD;
+      height += titleLines.length * TITLE_LEAD;
+      if (meta) height += 26;
+      height += 30;
+      if (bodyLines.length) height += 14 + bodyLines.length * BODY_LEAD;
+      pictures.forEach((img) => {
+        const scale = Math.min(1, inner / img.naturalWidth);
+        height += 24 + img.naturalHeight * scale;
+      });
+      height += FOOTER + EXPORT_PAD;
+
+      /* Rendered at 2x so text stays sharp when the PNG is zoomed or the PDF
+         is printed, without asking for an enormous surface. */
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(EXPORT_WIDTH * dpr);
+      canvas.height = Math.round(height * dpr);
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, EXPORT_WIDTH, height);
+      ctx.fillStyle = "#10b981";
+      ctx.fillRect(0, 0, EXPORT_WIDTH, 6);
+
+      let y = EXPORT_PAD + 30;
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "700 30px " + EXPORT_FONT;
+      ctx.textBaseline = "alphabetic";
+      titleLines.forEach((line) => { ctx.fillText(line, EXPORT_PAD, y); y += TITLE_LEAD; });
+
+      if (meta) {
+        y += 4;
+        ctx.fillStyle = "#64748b";
+        ctx.font = "500 15px " + EXPORT_FONT;
+        ctx.fillText(meta, EXPORT_PAD, y);
+        y += 26;
+      }
+
+      y += 6;
+      ctx.strokeStyle = "#d1fae5";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(EXPORT_PAD, y);
+      ctx.lineTo(EXPORT_WIDTH - EXPORT_PAD, y);
+      ctx.stroke();
+      y += 34;
+
+      if (bodyLines.length) {
+        ctx.fillStyle = "#1f2937";
+        ctx.font = "400 17px " + EXPORT_FONT;
+        bodyLines.forEach((line) => { ctx.fillText(line, EXPORT_PAD, y); y += BODY_LEAD; });
+        y += 10;
+      }
+
+      for (const img of pictures) {
+        const scale = Math.min(1, inner / img.naturalWidth);
+        const w = Math.round(img.naturalWidth * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        y += 24;
+        const x = EXPORT_PAD + Math.round((inner - w) / 2);
+        ctx.drawImage(img, x, y, w, h);
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        y += h;
+      }
+
+      y += 30;
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "500 13px " + EXPORT_FONT;
+      ctx.fillText("BBA Section H Organizer", EXPORT_PAD, y);
+      const stamp = new Date().toLocaleDateString();
+      const stampWidth = ctx.measureText(stamp).width;
+      ctx.fillText(stamp, EXPORT_WIDTH - EXPORT_PAD - stampWidth, y);
+
+      return canvas;
+    }
+
+    /* Minimal single page PDF holding one JPEG, written by hand rather than
+       pulled from a library. Every object records its byte offset as it is
+       emitted, so the xref table stays correct however long the image is.
+       Pure by construction, which is what makes it testable off screen. */
+    function buildPdfBytes(jpegBytes, imgW, imgH, pageW, pageH) {
+      const enc = (s) => {
+        const a = new Uint8Array(s.length);
+        for (let i = 0; i < s.length; i += 1) a[i] = s.charCodeAt(i) & 0xff;
+        return a;
+      };
+      const chunks = [];
+      const offsets = [0];
+      let pos = 0;
+      const put = (data) => {
+        const b = typeof data === "string" ? enc(data) : data;
+        chunks.push(b);
+        pos += b.length;
+      };
+      const mark = () => { offsets.push(pos); };
+
+      put("%PDF-1.4\n");
+      put(new Uint8Array([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]));
+
+      mark();
+      put("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+      mark();
+      put("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+      mark();
+      put("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pageW + " " + pageH
+        + "] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>\nendobj\n");
+      const content = "q " + pageW + " 0 0 " + pageH + " 0 0 cm /Im0 Do Q";
+      mark();
+      put("4 0 obj\n<< /Length " + content.length + " >>\nstream\n" + content + "\nendstream\nendobj\n");
+      mark();
+      put("5 0 obj\n<< /Type /XObject /Subtype /Image /Width " + imgW + " /Height " + imgH
+        + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length "
+        + jpegBytes.length + " >>\nstream\n");
+      put(jpegBytes);
+      put("\nendstream\nendobj\n");
+
+      const xrefAt = pos;
+      const size = offsets.length;
+      let xref = "xref\n0 " + size + "\n0000000000 65535 f \n";
+      for (let i = 1; i < size; i += 1) {
+        xref += String(offsets[i]).padStart(10, "0") + " 00000 n \n";
+      }
+      put(xref);
+      put("trailer\n<< /Size " + size + " /Root 1 0 R >>\nstartxref\n" + xrefAt + "\n%%EOF\n");
+
+      const out = new Uint8Array(pos);
+      let at = 0;
+      chunks.forEach((c) => { out.set(c, at); at += c.length; });
+      return out;
+    }
+
+    async function exportAnswer(item, format) {
+      const canvas = await buildAnswerCanvas(item);
+      const name = exportFileName(item, format);
+      if (format === "png") {
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (!blob) throw new Error("The browser could not encode the picture.");
+        saveBlob(blob, name);
+        return;
+      }
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+      const bin = atob(base64);
+      const jpeg = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) jpeg[i] = bin.charCodeAt(i);
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const bytes = buildPdfBytes(jpeg, canvas.width, canvas.height,
+        Math.round(EXPORT_WIDTH), Math.round(canvas.height / dpr));
+      saveBlob(new Blob([bytes], { type: "application/pdf" }), name);
+    }
     const INPUT =
       "w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-500 dark:focus:bg-slate-900 dark:focus:ring-emerald-500/20";
     const INPUT_ERR =
@@ -1921,6 +2166,27 @@
         });
       }
 
+      /* Export is tracked per format so one button can spin without hiding
+         the other. The notice follows the same idea as the copy tick: a
+         short lived message rather than a dialog over the answer. */
+      const [exporting, setExporting] = useState("");
+      const [exportNote, setExportNote] = useState("");
+
+      async function handleExport(format) {
+        if (exporting) return;
+        setExporting(format);
+        try {
+          await exportAnswer(item, format);
+          setExportNote(format.toUpperCase() + " saved");
+        } catch (err) {
+          console.error("[organizer] answer export failed", err);
+          setExportNote("Export failed");
+        } finally {
+          setExporting("");
+          setTimeout(() => setExportNote(""), 2600);
+        }
+      }
+
       function handleDelete() {
         if (confirming) {
           onDelete(item.id);
@@ -2153,7 +2419,7 @@
               <div id={solutionId} className={`grid transition-[grid-template-rows] duration-300 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
                 <div className="overflow-hidden">
                   <div className="mt-3 rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-4 dark:border-emerald-500/25 dark:bg-emerald-500/10" aria-hidden={!open}>
-                    <div className="flex items-center justify-between gap-2 border-b border-emerald-200/70 pb-2.5 dark:border-emerald-500/20">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200/70 pb-2.5 dark:border-emerald-500/20">
                       <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">
                         Answer and solution
                       </span>
@@ -2170,6 +2436,35 @@
                         {copied ? <Check size={12} strokeWidth={3} /> : <Copy size={12} />}
                         {copied ? "Copied" : "Copy"}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExport("png")}
+                        disabled={Boolean(exporting) && exporting !== "png"}
+                        tabIndex={open ? 0 : -1}
+                        title="Save the whole answer as a picture"
+                        aria-label={"Save the answer of " + item.title + " as a PNG picture"}
+                        className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg bg-white/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200 transition hover:bg-white hover:text-slate-900 disabled:opacity-50 dark:bg-slate-900/70 dark:text-slate-300 dark:ring-slate-500/30 dark:hover:bg-slate-900 dark:hover:text-white"
+                      >
+                        {exporting === "png" ? <LoaderCircle size={12} className="animate-spin" /> : <Download size={12} />}
+                        PNG
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExport("pdf")}
+                        disabled={Boolean(exporting) && exporting !== "pdf"}
+                        tabIndex={open ? 0 : -1}
+                        title="Save the whole answer as a document"
+                        aria-label={"Save the answer of " + item.title + " as a PDF document"}
+                        className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg bg-white/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200 transition hover:bg-white hover:text-slate-900 disabled:opacity-50 dark:bg-slate-900/70 dark:text-slate-300 dark:ring-slate-500/30 dark:hover:bg-slate-900 dark:hover:text-white"
+                      >
+                        {exporting === "pdf" ? <LoaderCircle size={12} className="animate-spin" /> : <FileText size={12} />}
+                        PDF
+                      </button>
+                      {exportNote && (
+                        <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                          {exportNote}
+                        </span>
+                      )}
                     </div>
                     {item.solution && (
                       <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-200">{item.solution}</p>
