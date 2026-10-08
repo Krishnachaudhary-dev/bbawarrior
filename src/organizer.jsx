@@ -1480,6 +1480,34 @@
       );
     }
 
+    /* The session check is a real round trip, and until it answers the app does
+       not know whether this device is signed in. Showing the sign in form during
+       that window is what made every reload present a login screen to a visitor
+       who already held a session. This is the same shell without a form in it:
+       nothing is granted before the server says so, it simply stops asking for
+       credentials it is about to find it already has. */
+    function BootScreen() {
+      return (
+        <div className="relative flex min-h-screen items-center justify-center px-4 py-10">
+          <AmbientBackdrop />
+          <div className="relative z-10 w-full max-w-md animate-rise">
+            <div className="rounded-2xl border border-white/70 bg-white/85 p-8 text-center shadow-lift backdrop-blur-xl sm:p-9 dark:border-slate-800 dark:bg-slate-900/80">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-glow">
+                <Lock size={24} />
+              </div>
+              <h1 className="mt-6 font-display text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+                BBA Section H Organizer
+              </h1>
+              <p className="mx-auto mt-3 flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                <LoaderCircle size={16} className="animate-spin" />
+                Checking your session
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function SignInScreen({ onSignIn, onRegister, onSetup, onOpenAdminGate, setup, offlineAvailable, onOfflineGuest }) {
       const [mode, setMode] = useState("signin");
       const [form, setForm] = useState({ username: "", password: "", code: "" });
@@ -4248,6 +4276,8 @@
       const [guest, setGuest] = useState(false);
       const [offlineBoot, setOfflineBoot] = useState(false);
       const [needsSetup, setNeedsSetup] = useState(false);
+      /* Until /api/auth/me has answered, nobody is known to be signed out. */
+      const [isCheckingAuth, setIsCheckingAuth] = useState(true);
       const [gate, setGate] = useState(readGate);
       const remoteOn = useRef(false);
       const lastRemoteItems = useRef("");
@@ -4341,44 +4371,80 @@
         return () => window.removeEventListener("hashchange", onHash);
       }, []);
 
-      /* Join the shared board on first load, then stay on it. Both no-ops when the
-         page is not served from the quiz app. */
-      useEffect(() => {
-        let alive = true;
-        (async () => {
-          const state = await remotePull();
-          if (!alive || !state) return;
-          remoteOn.current = true;
-          const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
-          lastRemoteItems.current = itemsFingerprint(remoteItems);
-          if (lastRemoteItems.current !== itemsFingerprint(items)) setItems(remoteItems);
-          const remoteAccounts = Array.isArray(state.accounts)
-            ? state.accounts.map(normaliseAccount).filter(Boolean)
-            : [];
-          if (remoteAccounts.length) {
-            setConfig((current) => {
-              const merged = mergeRemoteAccounts(remoteAccounts);
-              lastRemoteAccounts.current = accountsFingerprint(merged);
-              return normaliseConfig({
-                subjects: (state.config && state.config.subjects) || current.subjects,
-                theme: current.theme,
-                classCode: (state.config && state.config.classCode) || current.classCode,
-                accounts: merged,
-              });
+      /* Joining the shared board is one routine, called only when it is wanted.
+         The board travels as a single document and assignment pictures ride
+         along inside it as data urls, so it is hundreds of kilobytes. On a page
+         whose visitor is stopped at the sign in screen it buys nothing and
+         competes with painting the very form they are waiting for, so it is
+         asked for once someone is actually signed in. Held in a ref so a sign
+         in that lands between renders still reads the current items rather than
+         a stale copy. */
+      const joinBoardRef = useRef(null);
+
+      async function joinBoard() {
+        const state = await remotePull();
+        if (!state) return;
+        remoteOn.current = true;
+        const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
+        lastRemoteItems.current = itemsFingerprint(remoteItems);
+        if (lastRemoteItems.current !== itemsFingerprint(items)) setItems(remoteItems);
+        const remoteAccounts = Array.isArray(state.accounts)
+          ? state.accounts.map(normaliseAccount).filter(Boolean)
+          : [];
+        if (remoteAccounts.length) {
+          setConfig((current) => {
+            const merged = mergeRemoteAccounts(remoteAccounts);
+            lastRemoteAccounts.current = accountsFingerprint(merged);
+            return normaliseConfig({
+              subjects: (state.config && state.config.subjects) || current.subjects,
+              theme: current.theme,
+              classCode: (state.config && state.config.classCode) || current.classCode,
+              accounts: merged,
             });
-          }
-          /* Once the board answers, open the doorbell so an admin save shows up here
-             at once rather than at the next poll. */
-          openRealtime(state.realtime, () => {
-            if (syncRef.current) syncRef.current();
           });
-        })();
-        return () => {
-          alive = false;
-        };
-        /* Mount only: later changes travel through the poll and the save effect. */
-        /* eslint-disable-next-line */
-      }, []);
+        }
+        /* Once the board answers, open the doorbell so an admin save shows up here
+           at once rather than at the next poll. */
+        openRealtime(state.realtime, () => {
+          if (syncRef.current) syncRef.current();
+        });
+      }
+      joinBoardRef.current = joinBoard;
+
+      /* Hand the browser a frame to paint before the board arrives. The first
+         frame is the one on screen now and the second is the one after it, so
+         the answer lands behind a screen the visitor can already read.
+         requestIdleCallback used to do this job and was the wrong tool: this
+         page is always animating, idle never came, and its 1500 ms fallback,
+         not the paint, decided when the board was asked for.
+
+         The timeout is not decoration. Animation frames are never run in a tab
+         that is hidden, so waiting on them alone would leave the board unfetched
+         for a visitor who opens the app in a background tab and switches to it
+         later. Frames are the courtesy; the timer is the guarantee. */
+      function afterFirstPaint() {
+        return new Promise((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            resolve();
+          };
+          if (typeof window.requestAnimationFrame === "function") {
+            window.requestAnimationFrame(() => window.requestAnimationFrame(finish));
+          }
+          setTimeout(finish, 300);
+        });
+      }
+
+      /* Ask for the board in the background. Never awaited by a sign in: the
+         account is already known and the cards fill in as the answer lands. */
+      function loadBoardInBackground() {
+        afterFirstPaint().then(() => {
+          if (joinBoardRef.current) return joinBoardRef.current();
+          return undefined;
+        });
+      }
 
       /* One sync routine with two triggers: the safety poll, and the realtime doorbell
          when another admin saves. It lives in a ref so a doorbell that rings between
@@ -4437,14 +4503,26 @@
           purgeLegacySecrets();
           const me = await meRequest();
           if (!alive) return;
+          /* The check has answered, whichever way it answered. */
+          setIsCheckingAuth(false);
           if (me.ok) setAccount(me.account);
           else if (me.offline) setOfflineBoot(true);
           else if (me.setup) setNeedsSetup(true);
+
+          /* The board is asked for only once someone is on it. A visitor stopped
+             at the sign in screen has no use for it, and pulling it there was what
+             kept that screen busy for seconds after it had appeared. The offline
+             copy is already on this device, so it is not fetched either. */
+          if (!me.ok) return;
+          await afterFirstPaint();
+          if (!alive) return;
+          if (joinBoardRef.current) await joinBoardRef.current();
         })();
         return () => {
           alive = false;
         };
         /* Mount only: sign in, sign out and expiry all update state directly. */
+        /* eslint-disable-next-line */
       }, []);
 
       /* The refused-save warning belongs to whoever hit the refusal. Tying it to the
@@ -4551,6 +4629,7 @@
             setGuest(false);
             setOfflineBoot(false);
             setNeedsSetup(false);
+            loadBoardInBackground();
             return { ok: true };
           }
           if (verdict.setup) {
@@ -4583,6 +4662,7 @@
           setGuest(false);
           setOfflineBoot(false);
           setNeedsSetup(false);
+          loadBoardInBackground();
           return { ok: true };
         }
         return { ok: false, offline: Boolean(verdict.offline), reason: verdict.reason };
@@ -4597,6 +4677,7 @@
           setNeedsSetup(false);
           setOfflineBoot(false);
           setGuest(false);
+          loadBoardInBackground();
           return { ok: true };
         }
         return { ok: false, offline: Boolean(verdict.offline), reason: verdict.reason };
@@ -4889,6 +4970,8 @@
               onDismissSaveError={() => setSaveError(null)}
               onReverifyDevice={reverifyDevice}
             />
+          ) : isCheckingAuth ? (
+            <BootScreen />
           ) : gate === "admin" ? (
             <AdminSignIn onSignIn={signIn} onLeave={openClassGate} />
           ) : (
