@@ -1483,29 +1483,15 @@
     /* The session check is a real round trip, and until it answers the app does
        not know whether this device is signed in. Showing the sign in form during
        that window is what made every reload present a login screen to a visitor
-       who already held a session. This is the same shell without a form in it:
-       nothing is granted before the server says so, it simply stops asking for
-       credentials it is about to find it already has. */
+       who already held a session.
+
+       It draws nothing at all. The body already carries the app background from
+       the very first paint, so an empty frame is indistinguishable from a page
+       that is simply still loading: no logo, no words, no spinner, nothing that
+       arrives and then changes its mind. Whatever follows is the screen that
+       decides whether this device belongs here. */
     function BootScreen() {
-      return (
-        <div className="relative flex min-h-screen items-center justify-center px-4 py-10">
-          <AmbientBackdrop />
-          <div className="relative z-10 w-full max-w-md animate-rise">
-            <div className="rounded-2xl border border-white/70 bg-white/85 p-8 text-center shadow-lift backdrop-blur-xl sm:p-9 dark:border-slate-800 dark:bg-slate-900/80">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-glow">
-                <Lock size={24} />
-              </div>
-              <h1 className="mt-6 font-display text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">
-                BBA Section H Organizer
-              </h1>
-              <p className="mx-auto mt-3 flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                <LoaderCircle size={16} className="animate-spin" />
-                Checking your session
-              </p>
-            </div>
-          </div>
-        </div>
-      );
+      return <div className="min-h-screen" aria-hidden="true" />;
     }
 
     function SignInScreen({ onSignIn, onRegister, onSetup, onOpenAdminGate, setup, offlineAvailable, onOfflineGuest }) {
@@ -4989,7 +4975,7 @@
 
           {/* Trivia replaces the old quiz link: it stays visible but quiet until
               the quiz app itself is ready to open. */}
-          {window.location.pathname.split("/").pop() !== "index.html" && (
+          {!isCheckingAuth && window.location.pathname.split("/").pop() !== "index.html" && (
             <span
               title="Coming soon"
               aria-disabled="true"
