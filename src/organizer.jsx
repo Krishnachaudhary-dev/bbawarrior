@@ -921,6 +921,20 @@
        rewrapped as a blob URL before opening. A direct open is the fallback
        for remote files whose fetch is blocked. */
     async function openPdfDocument(src) {
+      if (isPdf(src)) {
+        try {
+          const bytes = atob(String(src).split(",")[1]);
+          const mime = String(src).split(";")[0].split(":")[1] || "application/pdf";
+          const url = URL.createObjectURL(
+            new Blob([new Uint8Array(bytes.split("").map((ch) => ch.charCodeAt(0)))], { type: mime })
+          );
+          window.open(url, "_blank", "noopener");
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          return;
+        } catch (err) {
+          /* fall through to the remote fetch path below */
+        }
+      }
       try {
         const res = await fetch(src, { mode: "cors" });
         if (!res.ok) throw new Error("HTTP " + res.status);
@@ -1987,7 +2001,7 @@
                     {isPdf(src) ? (
                       <button
                         type="button"
-                        onClick={() => openPdfDocument(src)}
+                        onClick={() => openPdfDocument({ id: item.id, index: index, src: src })}
                         title="View document"
                         aria-label={"Open document " + (index + 1) + " of " + item.title}
                         className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-rose-500/10 to-transparent text-slate-500 transition duration-300 group-hover/img:from-rose-500/20 dark:from-rose-500/15 dark:text-slate-300"
@@ -2032,7 +2046,7 @@
                     )}
                     <button
                       type="button"
-                      onClick={() => downloadPicture(src, item.title, index)}
+                      onClick={() => downloadPicture({ id: item.id, index: index, src: src, title: item.title })}
                       title="Download full resolution"
                       aria-label={"Download picture " + (index + 1) + " of " + item.title}
                       className="absolute bottom-2 right-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-lg bg-slate-950/55 text-white/85 ring-1 ring-inset ring-white/15 backdrop-blur-md transition hover:bg-slate-950/80 hover:text-white focus-visible:opacity-100"
@@ -2182,7 +2196,7 @@
                             {isPdf(src) ? (
                               <button
                                 type="button"
-                                onClick={() => openPdfDocument(src)}
+                                onClick={() => openPdfDocument({ id: item.id, index: index, src: src })}
                                 tabIndex={open ? 0 : -1}
                                 title="View document"
                                 aria-label={"Open answer document " + (index + 1) + " of " + item.title}
@@ -2203,7 +2217,7 @@
                             )}
                             <button
                               type="button"
-                              onClick={() => downloadPicture(src, item.title, index)}
+                              onClick={() => downloadPicture({ id: item.id, index: index, src: src, title: item.title })}
                               tabIndex={open ? 0 : -1}
                               title="Download full resolution"
                               aria-label={"Download answer picture " + (index + 1) + " of " + item.title}
@@ -2290,7 +2304,7 @@
                   {isPdf(src) ? (
                     <button
                       type="button"
-                      onClick={() => openPdfDocument(src)}
+                      onClick={() => openPdfDocument({ id: item.id, index: index, src: src })}
                       title="View document"
                       aria-label={"Open document " + (index + 1)}
                       className="flex h-28 w-full flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-rose-500/10 to-transparent text-slate-500 transition hover:from-rose-500/20 dark:from-rose-500/15 dark:text-slate-300"
