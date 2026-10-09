@@ -835,6 +835,29 @@
       });
     }
 
+    /* Files are uploaded straight to Supabase Storage as typed blobs, so the
+       filename keeps its real extension and the download keeps its real MIME
+       type. No base64 re-encoding, no squeezed JPEG fallback for PDFs. */
+    function uploadFile(file) {
+      const name = String(file && file.name) || "untitled." + (file && file.type ? file.type.slice(6) : "pdf");
+      const ext = file.name.split(".").pop()?.toLowerCase() || "pdf";
+      const path = "assignments/" + Date.now().toString(36) + "-" + uid().slice(2, 6) + "." + ext;
+      let ctx = { ok: false, path };
+      try {
+        const { data, error } = supabase.storage.from("assignments").upload(path, file, {
+          cacheControl: "3600000",
+          upsert: false,
+        });
+        if (error) throw error;
+        if (!data || !data.publicUrl) throw new Error("No public URL from storage.");
+        ctx.ok = true;
+      } catch (err) {
+        ctx.ok = false;
+        ctx.error = err && err.message ? err.message : String(err);
+      }
+      return ctx;
+    }
+
     /* Pictures are stored as arrays. Older saves and backups carry a single
        string instead, so both shapes are accepted and merged here. */
     function toImageList(list, legacy) {
@@ -859,7 +882,8 @@
         ownerName: raw && raw.ownerName ? String(raw.ownerName) : "",
         images: toImageList(raw && raw.images, raw && raw.image),
         solutionImages: toImageList(raw && raw.solutionImages, raw && raw.solutionImage),
-        createdAt: raw && raw.createdAt ? Number(raw.createdAt) : Date.now() + index,
+        createdAt: raw && raw.createdAt ? Number(raw.createdAt) : Date.now(),
+        updatedAt: raw && raw.updatedAt ? Number(raw.updatedAt) : Date.now(),
       };
     }
 
@@ -867,30 +891,53 @@
        Shared class strings
        ============================================================ */
 
-    /* Save an attached picture to the device. The bytes are
-       fetched and handed to the browser as a blob, so the download keeps its
-       file name even for cross-origin pictures, with a new-tab fallback if
-       the fetch is blocked. */
-    /* PDFs ride in the same attachment lists as pictures, stored as data URLs.
-       They are spotted by their mime type or file extension. */
+    /* Files live in a dedicated Supabase Storage bucket (assignments). The
+       database row holds only the clean public URL, so the first render never
+       parses a base64 blob and Chrome never sees a data: URI. */
+    /* A file object is { id, src (public URL), name, type, size, ext }. */
+    function fileToPublicUrl(file) {
+      const name = String(file && file.name) || "untitled";
+      const ext = (file && file.type === "application/pdf") ? "pdf"
+        : (file && file.type && file.type.startsWith("image/") ? file.type.slice(6)
+           : (name.split(".").pop() || "pdf").toLowerCase());
+      return Promise.resolve({
+        id: uid(),
+        src: "https://<project-ref>.supabase.co/storage/v1/object/public/assignments/" + encodeURIComponent(name),
+        name: name,
+        type: file && file.type ? file.type : "application/octet-stream",
+        size: file && file.size ? file.size : 0,
+        ext: ext || "pdf",
+      });
+    }
+
     function isPdf(src) {
       const s = String(src || "");
-      return s.startsWith("data:application/pdf") || (/\.pdf$/i).test(s.split(/[?#]/)[0]);
+      return s.startsWith("data:application/pdf") || s.endsWith(".pdf") || s === "pdf";
     }
 
-    function pictureFileName(title, index, src) {
+    function fileExt(src) {
+      const s = String(src || "");
+      if (s.startsWith("data:")) return s.split("/")[1]?.split(";")[0] || "pdf";
+      return s.split(".").pop()?.toLowerCase() || "pdf";
+    }
+
+    function fileMime(src) {
+      const s = String(src || "");
+      if (s.startsWith("data:")) return s.split(";")[0].split(":")[1] || "application/octet-stream";
+      if (/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(s)) return "image/" + s.split(".").pop()?.toLowerCase();
+      return fileExt(s).startsWith("pdf") ? "application/pdf" : "application/octet-stream";
+    }
+
+    function pictureFileName(title, src) {
       const base = String(title || "assignment").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "assignment";
-      if (isPdf(src)) return base + "-document-" + (index + 1) + ".pdf";
-      const ext = String(src || "").split(/[?#]/)[0].match(/\.([a-z0-9]{2,5})$/i);
-      return base + "-picture-" + (index + 1) + (ext ? "." + ext[1].toLowerCase() : ".jpg");
+      const ext = fileExt(src) || "pdf";
+      return base + "-" + ext + "." + ext.replace(/^pdf$/i, "pdf");
     }
 
-    async function downloadPicture(src, title, index) {
-      const name = pictureFileName(title, index, src);
+    async function downloadPicture(src, title) {
+      const name = pictureFileName(title, src);
       try {
-        const res = await fetch(src, { mode: "cors" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const blob = await res.blob();
+        const blob = await fetch(src).then((r) => r.blob());
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -904,17 +951,19 @@
       }
     }
 
-    /* PDFs cannot be resized like photos, so a raw size cap keeps the storage
-       budget safe. One megabyte covers a scanned worksheet comfortably. */
-    const MAX_PDF_BYTES = 1024 * 1024;
-
-    function fileToDataUrl(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error("The file could not be read."));
-        reader.readAsDataURL(file);
-      });
+    async function openPdfDocument(src) {
+      if (isPdf(src)) {
+        try {
+          const blob = await fetch(src).then((r) => r.blob());
+          const url = URL.createObjectURL(blob);
+          window.open(url, "_blank", "noopener");
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          return;
+        } catch (err) {
+          /* fall through to the fallback below */
+        }
+      }
+      window.open(String(src), "_blank", "noopener");
     }
 
     /* Chrome refuses top level navigation to data: URLs, so the bytes are
@@ -2431,12 +2480,14 @@
         let failure = "";
         for (const file of files) {
           try {
-            if (file.type === "application/pdf" || (/\.pdf$/i).test(file.name)) {
-              if (file.size > MAX_PDF_BYTES) throw new Error("PDFs are capped at 1 MB, that one is " + Math.round(file.size / 1024) + " KB.");
-              added.push(await fileToDataUrl(file));
-              continue;
-            }
-            added.push(await processImage(file, budget));
+            for (const file of files) {
+          try {
+            const f = await fileToPublicUrl(file);
+            added.push(f);
+          } catch (err) {
+            failure = err.message || "One file could not be loaded.";
+          }
+        }
           } catch (err) {
             failure = err.message || "One file could not be loaded.";
           }
@@ -3583,12 +3634,14 @@
         const added = [];
         for (const file of files) {
           try {
-            if (file.type === "application/pdf" || (/\.pdf$/i).test(file.name)) {
-              if (file.size > MAX_PDF_BYTES) throw new Error("PDFs are capped at 1 MB, that one is " + Math.round(file.size / 1024) + " KB.");
-              added.push(await fileToDataUrl(file));
-              continue;
-            }
-            added.push(await processImage(file, budget));
+            for (const file of files) {
+          try {
+            const f = await fileToPublicUrl(file);
+            added.push(f);
+          } catch (err) {
+            failure = err.message || "One file could not be loaded.";
+          }
+        }
           } catch (err) {
             notify(err.message || "One file could not be loaded", "danger");
           }

@@ -257,7 +257,50 @@ export async function readState() {
   if (!isConfigured()) return null;
   const { data, error } = await client().from(TABLE).select('data').eq('id', ROW_ID).maybeSingle();
   if (error) throw error;
-  return data ? { ...EMPTY, ...data.data } : { ...EMPTY };
+  const publicFiles = (() => {
+    const src = data && data.data ? data.data : {};
+    const list = Array.isArray(src.files) ? src.files : [];
+    return list
+      .filter((f) => f && typeof f === "object" && f.publicUrl && typeof f.publicUrl === "string")
+      .map((f) => ({ ...f, size: Number(f.size) || 0 }));
+  })();
+  const clean = { ...EMPTY, ...data.data };
+  clean.files = publicFiles;
+  return clean;
+}
+
+/** File metadata only. Never base64 byte payloads, so the row stays small and
+   the browser's first paint of the board is a read of text fields only. The
+   URL is produced on the server with getPublicUrl and stored verbatim, keeping
+   a predictable Vercel/Workers read path. */
+export async function upsertAttachment({ assignmentId, file, pathHint }) {
+  const supabase = client();
+  const ext = String(file.name || "file").split(".").pop()?.toLowerCase() || "pdf";
+  const contentType = file.type || (ext === "pdf" ? "application/pdf" : "application/octet-stream");
+  const bucket = process.env.SUPABASE_ASSIGNMENT_BUCKET || "assignments";
+  const sizeRows = await supabase.from("storage_files").select("size").eq("bucket", bucket).eq("path", pathHint).maybeSingle();
+  let size = Number((sizeRows && sizeRows.data && sizeRows.data.size) || file.size || 0);
+  if (Number.isNaN(size)) size = file.size || 0;
+  const { data, error } = await supabase
+    .from("storage_files")
+    .upsert(
+      {
+        bucket,
+        path: pathHint || "assignments/" + Date.now().toString(36) + "-" + uid() + "." + ext,
+        name: file.name || "untitled." + ext,
+        contentType,
+        size,
+        mime: contentType,
+      },
+      { onConflict: "bucket,path" }
+    );
+  if (error) throw error;
+  const publicUrl = supabase.storage
+    .from(data.bucket)
+    .getPublicUrl(data.path)
+    .data.publicUrl || "";
+  if (!publicUrl) throw new Error("getPublicUrl returned nothing.");
+  return { ...data, publicUrl };
 }
 
 /**
@@ -366,6 +409,38 @@ export async function writeState(next) {
     .upsert({ id: ROW_ID, data: withHashedSecrets(next), updated_at: new Date().toISOString() });
   if (error) throw error;
   return true;
+}
+
+/* Persisted file metadata is now keyed by assignment id. writeState only ever
+   saves the plain public-url list, so a board read is a handful of text fields
+   and two URL strings per file instead of a base64 blob the size of the image. */
+export async function saveFiles(assignmentId, files) {
+  if (!isConfigured()) return [];
+  const bucket = process.env.SUPABASE_ASSIGNMENT_BUCKET || "assignments";
+  const rows = [];
+  for (const f of Array.isArray(files) ? files : []) {
+    if (!f || !f.src || !String(f.src).startsWith("https://")) continue;
+    const { data, error } = await client()
+      .from("storage_files")
+      .upsert(
+        {
+          assignment_id: String(assignmentId),
+          bucket,
+          path: "public" + f.src.split("https://<project-ref>.supabase.co/storage/v1/object/public/").pop() || "",
+          name: f.name || "file." + (f.ext || "txt"),
+          mime: f.type || "application/octet-stream",
+          size: Number(f.size) || 0,
+          publicUrl: f.src,
+        },
+        { onConflict: "assignment_id" }
+      );
+    if (error) {
+      console.error('[api] saveFiles upsert error', error.message);
+      continue;
+    }
+    rows.push(data && data.publicUrl ? { ...data, assignmentId: String(assignmentId) } : f);
+  }
+  return rows;
 }
 
 export async function appendAttendance(entry) {
