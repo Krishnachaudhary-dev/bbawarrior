@@ -26,6 +26,59 @@
        privileged call is authorised by the server against the session cookie. */
     const ADMIN_HASH = "#admin";
 
+    /* Optimistic session hint.
+
+       The server is still the only thing that can say who is signed in, but it
+       has to be asked over the network, and waiting for the answer put a frame
+       of nothing on every reload. A successful sign in therefore writes this too:
+       the public account fields and a flag, and nothing else — no token, no
+       password, nothing the HttpOnly cookie already carries. The next load reads
+       it synchronously, which puts the dashboard in the very first frame, while
+       /api/auth/me is still fired in the background to confirm it. If that answer
+       is anything but yes the hint is deleted and the sign in screen returns.
+
+       A guess, withdrawn the moment the server disagrees. It grants nothing: every
+       write the dashboard makes is authorised by the server against the cookie,
+       so the worst an attacker holding this object can do is repaint a screen the
+       server will refuse to save to. */
+    const SESSION_HINT_KEY = "bba-section-h-organizer.active-session.v1";
+
+    function saveSessionHint(account) {
+      if (!account || account.guest) return;
+      try {
+        localStorage.setItem(
+          SESSION_HINT_KEY,
+          JSON.stringify({ hasActiveSession: true, account: { ...account } }),
+        );
+      } catch (err) {
+        /* Storage blocked or full: the reload simply boots through the check. */
+      }
+    }
+
+    function readSessionHint() {
+      try {
+        const raw = localStorage.getItem(SESSION_HINT_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.hasActiveSession !== true) return null;
+        const account = parsed.account;
+        if (!account || typeof account !== "object") return null;
+        if (!account.id || !account.username) return null;
+        return account;
+      } catch (err) {
+        /* Corrupt or unreadable: fall back to asking the server first. */
+        return null;
+      }
+    }
+
+    function clearSessionHint() {
+      try {
+        localStorage.removeItem(SESSION_HINT_KEY);
+      } catch (err) {
+        /* Nothing useful to do; the hint will fail validation on the next boot. */
+      }
+    }
+
     /* Everyone signs in with their own login. An admin can manage the class,
        a student can submit work to the shared board. */
     const ROLE_META = {
@@ -932,6 +985,251 @@
       }
     }
 
+    /* ---------------------------------------------------------------
+       Answer export
+
+       The answer lives as a block of text plus attached pictures, but the
+       only way to keep a copy was to copy the text and save the pictures
+       one at a time. These helpers compose the whole answer into a single
+       file, drawn on a canvas in this browser: nothing is uploaded and no
+       third party ever sees it.
+
+       The PDF is built from the same canvas as the PNG, so the two formats
+       can never disagree about what the answer looked like. No library is
+       pulled in for either one.
+       --------------------------------------------------------------- */
+
+    const EXPORT_WIDTH = 1040;
+    const EXPORT_PAD = 56;
+    const EXPORT_FONT = "system-ui, -apple-system, 'Segoe UI', Segoe UI, Roboto, sans-serif";
+
+    /* Greedy wrap that still honours the author's own line breaks. A word
+       longer than the column keeps its own line rather than being cut,
+       which would change what the answer says. */
+    function wrapExportLines(ctx, text, maxWidth) {
+      const lines = [];
+      String(text == null ? "" : text).split("\n").forEach((raw) => {
+        if (!raw.trim()) { lines.push(""); return; }
+        const words = raw.trim().split(/\s+/);
+        let line = "";
+        words.forEach((word) => {
+          const probe = line ? line + " " + word : word;
+          if (!line || ctx.measureText(probe).width <= maxWidth) { line = probe; return; }
+          lines.push(line);
+          line = word;
+        });
+        if (line) lines.push(line);
+      });
+      return lines;
+    }
+
+    function saveBlob(blob, name) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+
+    function exportFileName(item, ext) {
+      const base = String((item && item.title) || "answer").toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40);
+      return (base || "assignment") + "-answer." + ext;
+    }
+
+    /* A canvas cannot rasterise a PDF, so attached documents are left out
+       of the picture rather than drawn as a broken box. They keep their own
+       download control in the card. */
+    function loadExportImage(src) {
+      return new Promise((resolve) => {
+        if (isPdf(src)) { resolve(null); return; }
+        const img = new Image();
+        img.onload = () => resolve(img.naturalWidth ? img : null);
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+    }
+
+    async function buildAnswerCanvas(item) {
+      const inner = EXPORT_WIDTH - EXPORT_PAD * 2;
+      const title = String((item && item.title) || "Assignment");
+      const meta = [item.subject, item.dueDate].filter(Boolean).join("   ·   ");
+      const body = String(item.solution || "");
+
+      const probe = document.createElement("canvas").getContext("2d");
+      probe.font = "700 30px " + EXPORT_FONT;
+      const titleLines = wrapExportLines(probe, title, inner);
+      probe.font = "400 17px " + EXPORT_FONT;
+      const bodyLines = wrapExportLines(probe, body, inner);
+
+      const pictures = [];
+      for (const src of item.solutionImages || []) {
+        const img = await loadExportImage(src);
+        if (img) pictures.push(img);
+      }
+
+      const TITLE_LEAD = 38;
+      const BODY_LEAD = 27;
+      const FOOTER = 46;
+
+      let height = EXPORT_PAD;
+      height += titleLines.length * TITLE_LEAD;
+      if (meta) height += 26;
+      height += 30;
+      if (bodyLines.length) height += 14 + bodyLines.length * BODY_LEAD;
+      pictures.forEach((img) => {
+        const scale = Math.min(1, inner / img.naturalWidth);
+        height += 24 + img.naturalHeight * scale;
+      });
+      height += FOOTER + EXPORT_PAD;
+
+      /* Rendered at 2x so text stays sharp when the PNG is zoomed or the PDF
+         is printed, without asking for an enormous surface. */
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(EXPORT_WIDTH * dpr);
+      canvas.height = Math.round(height * dpr);
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, EXPORT_WIDTH, height);
+      ctx.fillStyle = "#10b981";
+      ctx.fillRect(0, 0, EXPORT_WIDTH, 6);
+
+      let y = EXPORT_PAD + 30;
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "700 30px " + EXPORT_FONT;
+      ctx.textBaseline = "alphabetic";
+      titleLines.forEach((line) => { ctx.fillText(line, EXPORT_PAD, y); y += TITLE_LEAD; });
+
+      if (meta) {
+        y += 4;
+        ctx.fillStyle = "#64748b";
+        ctx.font = "500 15px " + EXPORT_FONT;
+        ctx.fillText(meta, EXPORT_PAD, y);
+        y += 26;
+      }
+
+      y += 6;
+      ctx.strokeStyle = "#d1fae5";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(EXPORT_PAD, y);
+      ctx.lineTo(EXPORT_WIDTH - EXPORT_PAD, y);
+      ctx.stroke();
+      y += 34;
+
+      if (bodyLines.length) {
+        ctx.fillStyle = "#1f2937";
+        ctx.font = "400 17px " + EXPORT_FONT;
+        bodyLines.forEach((line) => { ctx.fillText(line, EXPORT_PAD, y); y += BODY_LEAD; });
+        y += 10;
+      }
+
+      for (const img of pictures) {
+        const scale = Math.min(1, inner / img.naturalWidth);
+        const w = Math.round(img.naturalWidth * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        y += 24;
+        const x = EXPORT_PAD + Math.round((inner - w) / 2);
+        ctx.drawImage(img, x, y, w, h);
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        y += h;
+      }
+
+      y += 30;
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "500 13px " + EXPORT_FONT;
+      ctx.fillText("BBA Section H Organizer", EXPORT_PAD, y);
+      const stamp = new Date().toLocaleDateString();
+      const stampWidth = ctx.measureText(stamp).width;
+      ctx.fillText(stamp, EXPORT_WIDTH - EXPORT_PAD - stampWidth, y);
+
+      return canvas;
+    }
+
+    /* Minimal single page PDF holding one JPEG, written by hand rather than
+       pulled from a library. Every object records its byte offset as it is
+       emitted, so the xref table stays correct however long the image is.
+       Pure by construction, which is what makes it testable off screen. */
+    function buildPdfBytes(jpegBytes, imgW, imgH, pageW, pageH) {
+      const enc = (s) => {
+        const a = new Uint8Array(s.length);
+        for (let i = 0; i < s.length; i += 1) a[i] = s.charCodeAt(i) & 0xff;
+        return a;
+      };
+      const chunks = [];
+      const offsets = [0];
+      let pos = 0;
+      const put = (data) => {
+        const b = typeof data === "string" ? enc(data) : data;
+        chunks.push(b);
+        pos += b.length;
+      };
+      const mark = () => { offsets.push(pos); };
+
+      put("%PDF-1.4\n");
+      put(new Uint8Array([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]));
+
+      mark();
+      put("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+      mark();
+      put("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+      mark();
+      put("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pageW + " " + pageH
+        + "] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>\nendobj\n");
+      const content = "q " + pageW + " 0 0 " + pageH + " 0 0 cm /Im0 Do Q";
+      mark();
+      put("4 0 obj\n<< /Length " + content.length + " >>\nstream\n" + content + "\nendstream\nendobj\n");
+      mark();
+      put("5 0 obj\n<< /Type /XObject /Subtype /Image /Width " + imgW + " /Height " + imgH
+        + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length "
+        + jpegBytes.length + " >>\nstream\n");
+      put(jpegBytes);
+      put("\nendstream\nendobj\n");
+
+      const xrefAt = pos;
+      const size = offsets.length;
+      let xref = "xref\n0 " + size + "\n0000000000 65535 f \n";
+      for (let i = 1; i < size; i += 1) {
+        xref += String(offsets[i]).padStart(10, "0") + " 00000 n \n";
+      }
+      put(xref);
+      put("trailer\n<< /Size " + size + " /Root 1 0 R >>\nstartxref\n" + xrefAt + "\n%%EOF\n");
+
+      const out = new Uint8Array(pos);
+      let at = 0;
+      chunks.forEach((c) => { out.set(c, at); at += c.length; });
+      return out;
+    }
+
+    async function exportAnswer(item, format) {
+      const canvas = await buildAnswerCanvas(item);
+      const name = exportFileName(item, format);
+      if (format === "png") {
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (!blob) throw new Error("The browser could not encode the picture.");
+        saveBlob(blob, name);
+        return;
+      }
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+      const bin = atob(base64);
+      const jpeg = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) jpeg[i] = bin.charCodeAt(i);
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const bytes = buildPdfBytes(jpeg, canvas.width, canvas.height,
+        Math.round(EXPORT_WIDTH), Math.round(canvas.height / dpr));
+      saveBlob(new Blob([bytes], { type: "application/pdf" }), name);
+    }
     const INPUT =
       "w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-500 dark:focus:bg-slate-900 dark:focus:ring-emerald-500/20";
     const INPUT_ERR =
@@ -1233,6 +1531,20 @@
           </div>
         </div>
       );
+    }
+
+    /* The session check is a real round trip, and until it answers the app does
+       not know whether this device is signed in. Showing the sign in form during
+       that window is what made every reload present a login screen to a visitor
+       who already held a session.
+
+       It draws nothing at all. The body already carries the app background from
+       the very first paint, so an empty frame is indistinguishable from a page
+       that is simply still loading: no logo, no words, no spinner, nothing that
+       arrives and then changes its mind. Whatever follows is the screen that
+       decides whether this device belongs here. */
+    function BootScreen() {
+      return <div className="min-h-screen" aria-hidden="true" />;
     }
 
     function SignInScreen({ onSignIn, onRegister, onSetup, onOpenAdminGate, setup, offlineAvailable, onOfflineGuest }) {
@@ -1921,6 +2233,27 @@
         });
       }
 
+      /* Export is tracked per format so one button can spin without hiding
+         the other. The notice follows the same idea as the copy tick: a
+         short lived message rather than a dialog over the answer. */
+      const [exporting, setExporting] = useState("");
+      const [exportNote, setExportNote] = useState("");
+
+      async function handleExport(format) {
+        if (exporting) return;
+        setExporting(format);
+        try {
+          await exportAnswer(item, format);
+          setExportNote(format.toUpperCase() + " saved");
+        } catch (err) {
+          console.error("[organizer] answer export failed", err);
+          setExportNote("Export failed");
+        } finally {
+          setExporting("");
+          setTimeout(() => setExportNote(""), 2600);
+        }
+      }
+
       function handleDelete() {
         if (confirming) {
           onDelete(item.id);
@@ -2153,7 +2486,7 @@
               <div id={solutionId} className={`grid transition-[grid-template-rows] duration-300 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
                 <div className="overflow-hidden">
                   <div className="mt-3 rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-4 dark:border-emerald-500/25 dark:bg-emerald-500/10" aria-hidden={!open}>
-                    <div className="flex items-center justify-between gap-2 border-b border-emerald-200/70 pb-2.5 dark:border-emerald-500/20">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200/70 pb-2.5 dark:border-emerald-500/20">
                       <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">
                         Answer and solution
                       </span>
@@ -2170,6 +2503,35 @@
                         {copied ? <Check size={12} strokeWidth={3} /> : <Copy size={12} />}
                         {copied ? "Copied" : "Copy"}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExport("png")}
+                        disabled={Boolean(exporting) && exporting !== "png"}
+                        tabIndex={open ? 0 : -1}
+                        title="Save the whole answer as a picture"
+                        aria-label={"Save the answer of " + item.title + " as a PNG picture"}
+                        className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg bg-white/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200 transition hover:bg-white hover:text-slate-900 disabled:opacity-50 dark:bg-slate-900/70 dark:text-slate-300 dark:ring-slate-500/30 dark:hover:bg-slate-900 dark:hover:text-white"
+                      >
+                        {exporting === "png" ? <LoaderCircle size={12} className="animate-spin" /> : <Download size={12} />}
+                        PNG
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExport("pdf")}
+                        disabled={Boolean(exporting) && exporting !== "pdf"}
+                        tabIndex={open ? 0 : -1}
+                        title="Save the whole answer as a document"
+                        aria-label={"Save the answer of " + item.title + " as a PDF document"}
+                        className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg bg-white/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200 transition hover:bg-white hover:text-slate-900 disabled:opacity-50 dark:bg-slate-900/70 dark:text-slate-300 dark:ring-slate-500/30 dark:hover:bg-slate-900 dark:hover:text-white"
+                      >
+                        {exporting === "pdf" ? <LoaderCircle size={12} className="animate-spin" /> : <FileText size={12} />}
+                        PDF
+                      </button>
+                      {exportNote && (
+                        <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                          {exportNote}
+                        </span>
+                      )}
                     </div>
                     {item.solution && (
                       <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-200">{item.solution}</p>
@@ -3946,13 +4308,17 @@
        ============================================================ */
 
     function App() {
-      const [account, setAccount] = useState(null);
+      /* Read during the first render, not in an effect: a returning visitor is on
+         the dashboard in the same frame the document paints. */
+      const [account, setAccount] = useState(() => readSessionHint());
       /* Offline visitor: the board could not be reached at sign in, so the saved
          copy is shown read only. A guest state, not a session: it carries no
          role, grants nothing, and is never persisted. */
       const [guest, setGuest] = useState(false);
       const [offlineBoot, setOfflineBoot] = useState(false);
       const [needsSetup, setNeedsSetup] = useState(false);
+      /* Until /api/auth/me has answered, nobody is known to be signed out. */
+      const [isCheckingAuth, setIsCheckingAuth] = useState(() => !readSessionHint());
       const [gate, setGate] = useState(readGate);
       const remoteOn = useRef(false);
       const lastRemoteItems = useRef("");
@@ -3984,8 +4350,7 @@
             return;
           }
           if (result.sessionLost) {
-            setAccount(null);
-            setGuest(false);
+            forgetSession();
             notify("Your session has expired. Sign in again.", "info");
             return;
           }
@@ -4046,44 +4411,80 @@
         return () => window.removeEventListener("hashchange", onHash);
       }, []);
 
-      /* Join the shared board on first load, then stay on it. Both no-ops when the
-         page is not served from the quiz app. */
-      useEffect(() => {
-        let alive = true;
-        (async () => {
-          const state = await remotePull();
-          if (!alive || !state) return;
-          remoteOn.current = true;
-          const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
-          lastRemoteItems.current = itemsFingerprint(remoteItems);
-          if (lastRemoteItems.current !== itemsFingerprint(items)) setItems(remoteItems);
-          const remoteAccounts = Array.isArray(state.accounts)
-            ? state.accounts.map(normaliseAccount).filter(Boolean)
-            : [];
-          if (remoteAccounts.length) {
-            setConfig((current) => {
-              const merged = mergeRemoteAccounts(remoteAccounts);
-              lastRemoteAccounts.current = accountsFingerprint(merged);
-              return normaliseConfig({
-                subjects: (state.config && state.config.subjects) || current.subjects,
-                theme: current.theme,
-                classCode: (state.config && state.config.classCode) || current.classCode,
-                accounts: merged,
-              });
+      /* Joining the shared board is one routine, called only when it is wanted.
+         The board travels as a single document and assignment pictures ride
+         along inside it as data urls, so it is hundreds of kilobytes. On a page
+         whose visitor is stopped at the sign in screen it buys nothing and
+         competes with painting the very form they are waiting for, so it is
+         asked for once someone is actually signed in. Held in a ref so a sign
+         in that lands between renders still reads the current items rather than
+         a stale copy. */
+      const joinBoardRef = useRef(null);
+
+      async function joinBoard() {
+        const state = await remotePull();
+        if (!state) return;
+        remoteOn.current = true;
+        const remoteItems = Array.isArray(state.items) ? state.items.map(normaliseItem) : [];
+        lastRemoteItems.current = itemsFingerprint(remoteItems);
+        if (lastRemoteItems.current !== itemsFingerprint(items)) setItems(remoteItems);
+        const remoteAccounts = Array.isArray(state.accounts)
+          ? state.accounts.map(normaliseAccount).filter(Boolean)
+          : [];
+        if (remoteAccounts.length) {
+          setConfig((current) => {
+            const merged = mergeRemoteAccounts(remoteAccounts);
+            lastRemoteAccounts.current = accountsFingerprint(merged);
+            return normaliseConfig({
+              subjects: (state.config && state.config.subjects) || current.subjects,
+              theme: current.theme,
+              classCode: (state.config && state.config.classCode) || current.classCode,
+              accounts: merged,
             });
-          }
-          /* Once the board answers, open the doorbell so an admin save shows up here
-             at once rather than at the next poll. */
-          openRealtime(state.realtime, () => {
-            if (syncRef.current) syncRef.current();
           });
-        })();
-        return () => {
-          alive = false;
-        };
-        /* Mount only: later changes travel through the poll and the save effect. */
-        /* eslint-disable-next-line */
-      }, []);
+        }
+        /* Once the board answers, open the doorbell so an admin save shows up here
+           at once rather than at the next poll. */
+        openRealtime(state.realtime, () => {
+          if (syncRef.current) syncRef.current();
+        });
+      }
+      joinBoardRef.current = joinBoard;
+
+      /* Hand the browser a frame to paint before the board arrives. The first
+         frame is the one on screen now and the second is the one after it, so
+         the answer lands behind a screen the visitor can already read.
+         requestIdleCallback used to do this job and was the wrong tool: this
+         page is always animating, idle never came, and its 1500 ms fallback,
+         not the paint, decided when the board was asked for.
+
+         The timeout is not decoration. Animation frames are never run in a tab
+         that is hidden, so waiting on them alone would leave the board unfetched
+         for a visitor who opens the app in a background tab and switches to it
+         later. Frames are the courtesy; the timer is the guarantee. */
+      function afterFirstPaint() {
+        return new Promise((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            resolve();
+          };
+          if (typeof window.requestAnimationFrame === "function") {
+            window.requestAnimationFrame(() => window.requestAnimationFrame(finish));
+          }
+          setTimeout(finish, 300);
+        });
+      }
+
+      /* Ask for the board in the background. Never awaited by a sign in: the
+         account is already known and the cards fill in as the answer lands. */
+      function loadBoardInBackground() {
+        afterFirstPaint().then(() => {
+          if (joinBoardRef.current) return joinBoardRef.current();
+          return undefined;
+        });
+      }
 
       /* One sync routine with two triggers: the safety poll, and the realtime doorbell
          when another admin saves. It lives in a ref so a doorbell that rings between
@@ -4142,14 +4543,35 @@
           purgeLegacySecrets();
           const me = await meRequest();
           if (!alive) return;
-          if (me.ok) setAccount(me.account);
-          else if (me.offline) setOfflineBoot(true);
-          else if (me.setup) setNeedsSetup(true);
+          /* The check has answered, whichever way it answered. */
+          setIsCheckingAuth(false);
+          if (!me.ok) {
+            /* The server does not confirm this device. Whatever was painted from
+               the hint is taken back before anyone has had time to act on it: no
+               account, no dashboard, and nothing left in storage to guess with. */
+            forgetSession();
+            if (me.offline) setOfflineBoot(true);
+            else if (me.setup) setNeedsSetup(true);
+            return;
+          }
+          /* It agrees, so the server answer replaces the guess and becomes the
+             hint the next reload boots from. */
+          setAccount(me.account);
+          saveSessionHint(me.account);
+
+          /* The board is asked for only once someone is on it. A visitor stopped
+             at the sign in screen has no use for it, and pulling it there was what
+             kept that screen busy for seconds after it had appeared. The offline
+             copy is already on this device, so it is not fetched either. */
+          await afterFirstPaint();
+          if (!alive) return;
+          if (joinBoardRef.current) await joinBoardRef.current();
         })();
         return () => {
           alive = false;
         };
         /* Mount only: sign in, sign out and expiry all update state directly. */
+        /* eslint-disable-next-line */
       }, []);
 
       /* The refused-save warning belongs to whoever hit the refusal. Tying it to the
@@ -4253,9 +4675,11 @@
         return loginRequest(name, password, adminOnly).then((verdict) => {
           if (verdict.ok) {
             setAccount(verdict.account);
+            saveSessionHint(verdict.account);
             setGuest(false);
             setOfflineBoot(false);
             setNeedsSetup(false);
+            loadBoardInBackground();
             return { ok: true };
           }
           if (verdict.setup) {
@@ -4285,9 +4709,11 @@
         const verdict = await registerRequest(name, password, String(code).trim());
         if (verdict.ok) {
           setAccount(verdict.account);
+          saveSessionHint(verdict.account);
           setGuest(false);
           setOfflineBoot(false);
           setNeedsSetup(false);
+          loadBoardInBackground();
           return { ok: true };
         }
         return { ok: false, offline: Boolean(verdict.offline), reason: verdict.reason };
@@ -4299,9 +4725,11 @@
         const verdict = await setupRequest(username, password);
         if (verdict.ok) {
           setAccount(verdict.account);
+          saveSessionHint(verdict.account);
           setNeedsSetup(false);
           setOfflineBoot(false);
           setGuest(false);
+          loadBoardInBackground();
           return { ok: true };
         }
         return { ok: false, offline: Boolean(verdict.offline), reason: verdict.reason };
@@ -4315,9 +4743,16 @@
         notify("Viewing the saved board, read only", "info");
       }
 
-      function signOut() {
+      /* Every path that ends a session also forgets the optimistic flag, or the
+         next reload would paint a dashboard the background check is about to take
+         back. Clearing it here, once, is what keeps the hint honest. */
+      function forgetSession() {
+        clearSessionHint();
         setAccount(null);
         setGuest(false);
+      }
+      function signOut() {
+        forgetSession();
         /* The cookie is the session: ask the server to burn the row behind it. */
         logoutRequest();
         notify("Signed out", "info");
@@ -4328,8 +4763,7 @@
          cookie. There is no local copy left to repair. */
       function reverifyDevice() {
         logoutRequest();
-        setAccount(null);
-        setGuest(false);
+        forgetSession();
         setSaveError(null);
         notify("Sign in again to carry on saving", "info");
       }
@@ -4344,8 +4778,7 @@
         const verdict = await changePasswordRequest(current, next);
         if (verdict.ok) return { ok: true };
         if (verdict.sessionLost) {
-          setAccount(null);
-          setGuest(false);
+          forgetSession();
           return { ok: false, reason: "Your session has expired. Sign in again." };
         }
         return { ok: false, reason: verdict.reason || "Could not save that password." };
@@ -4356,8 +4789,7 @@
          refreshed public roster comes back. Nothing here can approve itself. */
       function adminOutcome(result, fallback) {
         if (result.sessionLost) {
-          setAccount(null);
-          setGuest(false);
+          forgetSession();
           notify("Your session has expired. Sign in again.", "info");
           return false;
         }
@@ -4594,6 +5026,8 @@
               onDismissSaveError={() => setSaveError(null)}
               onReverifyDevice={reverifyDevice}
             />
+          ) : isCheckingAuth ? (
+            <BootScreen />
           ) : gate === "admin" ? (
             <AdminSignIn onSignIn={signIn} onLeave={openClassGate} />
           ) : (
@@ -4611,7 +5045,7 @@
 
           {/* Trivia replaces the old quiz link: it stays visible but quiet until
               the quiz app itself is ready to open. */}
-          {window.location.pathname.split("/").pop() !== "index.html" && (
+          {!isCheckingAuth && window.location.pathname.split("/").pop() !== "index.html" && (
             <span
               title="Coming soon"
               aria-disabled="true"
