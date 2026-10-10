@@ -2161,19 +2161,34 @@
                       <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">
                         Answer and solution
                       </span>
-                      <button
-                        type="button"
-                        onClick={handleCopy}
-                        tabIndex={open ? 0 : -1}
-                        className={`inline-flex min-h-[32px] items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition ${
-                          copied
-                            ? "bg-emerald-600 text-white"
-                            : "bg-white/80 text-emerald-700 ring-1 ring-emerald-200 hover:bg-white dark:bg-slate-900/70 dark:text-emerald-300 dark:ring-emerald-500/30 dark:hover:bg-slate-900"
-                        }`}
-                      >
-                        {copied ? <Check size={12} strokeWidth={3} /> : <Copy size={12} />}
-                        {copied ? "Copied" : "Copy"}
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        {item.solutionImages.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => downloadPicture(item.solutionImages[0], item.title, 0)}
+                            tabIndex={open ? 0 : -1}
+                            title="Download answer file"
+                            aria-label={"Download answer file of " + item.title}
+                            className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg bg-white/80 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200 transition hover:bg-white dark:bg-slate-900/70 dark:text-emerald-300 dark:ring-emerald-500/30 dark:hover:bg-slate-900"
+                          >
+                            <Download size={12} />
+                            Download
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleCopy}
+                          tabIndex={open ? 0 : -1}
+                          className={`inline-flex min-h-[32px] items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                            copied
+                              ? "bg-emerald-600 text-white"
+                              : "bg-white/80 text-emerald-700 ring-1 ring-inset ring-emerald-200 hover:bg-white dark:bg-slate-900/70 dark:text-emerald-300 dark:ring-emerald-500/30 dark:hover:bg-slate-900"
+                          }`}
+                        >
+                          {copied ? <Check size={12} strokeWidth={3} /> : <Copy size={12} />}
+                          {copied ? "Copied" : "Copy"}
+                        </button>
+                      </div>
                     </div>
                     {item.solution && (
                       <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-200">{item.solution}</p>
