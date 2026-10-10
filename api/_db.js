@@ -75,8 +75,20 @@ export function isConfigured() {
   return Boolean(String(process.env.SUPABASE_URL || '').trim() && secretKey());
 }
 
+/* The client is built once per warm instance and reused. It used to be built on
+   every call, which paid the full supabase-js construction cost (including an
+   eager realtime client plus a WebSocket transport) on every read and write; on
+   a cold start that ran inside the request that the browser is already waiting
+   on. Auth is off because the server talks to Supabase with the secret key and
+   never holds a user session, so there is nothing to persist or refresh. */
+let cachedClient = null;
+let cachedClientKey = '';
+
 function client() {
-  return createClient(String(process.env.SUPABASE_URL || '').trim(), secretKey(), {
+  const url = String(process.env.SUPABASE_URL || '').trim();
+  const key = secretKey();
+  if (cachedClient && cachedClientKey === url + '\u0000' + key) return cachedClient;
+  cachedClient = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
     /* supabase-js 2.109 constructs its realtime client eagerly and needs a
        WebSocket implementation to do it: on a Node 20 runtime (Vercel's
@@ -85,6 +97,8 @@ function client() {
        doorbell ever opens a socket, ordinary reads and writes stay on fetch. */
     realtime: { transport: ws },
   });
+  cachedClientKey = url + '\u0000' + key;
+  return cachedClient;
 }
 
 const EMPTY = {
@@ -251,7 +265,7 @@ export function realtimeConfig() {
   return { url, anonKey };
 }/** The bucket that holds assignment PDFs and pictures. Files live here; a row
    only ever holds a short public URL, never the bytes. */
-const BUCKET = 'assignments';
+export const BUCKET = 'assignments';
 
 /** Mirrors the bucket's file_size_limit (see supabase/schema.sql). */
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -302,7 +316,9 @@ export function isAttachmentUrl(src) {
 const INLINE_KEYS = ['images', 'solutionImages'];
 const INLINE_SCALAR_KEYS = ['image', 'solutionImage'];
 
-function collectInlineFiles(state) {
+/* Exported for the one-time cleanup in scripts/migrate-inline-files.mjs, which
+   walks the row directly rather than going through a request. */
+export function collectInlineFiles(state) {
   const items = Array.isArray(state.items) ? state.items : [];
   const jobs = [];
   items.forEach((item, i) => {
@@ -323,7 +339,7 @@ function collectInlineFiles(state) {
 }
 
 /** data:<mime>;base64,<payload> -> public URL in the assignments bucket. */
-async function uploadInlineDataUrl(src) {
+export async function uploadInlineDataUrl(src) {
   const comma = src.indexOf(',');
   if (src.slice(0, 5) !== 'data:' || comma < 0) throw new Error('not a data URL');
   const header = src.slice(5, comma);
@@ -345,9 +361,18 @@ async function uploadInlineDataUrl(src) {
   return data.publicUrl;
 }
 
-/** Serialises concurrent readers so two polling clients never upload the same
+/* Serialises concurrent readers so two polling clients never upload the same
    inline file twice inside one instance. */
 let inlineMigration = Promise.resolve();
+
+/* True when any item still carries an inline data: payload. This is the fast
+   gate for readState(): a row that has already been migrated has none, so the
+   read returns immediately instead of queueing behind the migration mutex and
+   scanning every file on every poll. It is a cheap scan over metadata only,
+   never over file bytes. */
+function hasInlineFiles(state) {
+  return collectInlineFiles(state).length > 0;
+}
 
 function migrateInlineFiles(state) {
   const run = inlineMigration.then(
@@ -412,14 +437,19 @@ async function migrateInlineNow(state) {
 /** The whole class document. One row keeps the sync model honest: one shared copy.
    No row yet is normal, it returns the empty shape rather than failing.
    Inline file payloads never leave this function: they are moved to Storage
-   (best effort) and the returned state carries only short URLs, so a board
-   read is text sized no matter what an old row still contains. */
+   (best effort) and the returned state carries only short URLs, so a board read
+   is text sized no matter what an old row still contains.
+   A row that is already clean returns straight away: the migration gate below
+   only engages while inline payloads remain, so steady-state reads cost one
+   lightweight select and nothing else. */
 export async function readState() {
   if (!isConfigured()) return null;
   const { data, error } = await client().from(TABLE).select('data').eq('id', ROW_ID).maybeSingle();
   if (error) throw error;
   const doc = data && data.data && typeof data.data === 'object' ? data.data : {};
   const state = { ...EMPTY, ...doc };
+  /* Fast path: nothing inline, nothing to migrate or rewrite. */
+  if (!hasInlineFiles(state)) return state;
   return migrateInlineFiles(state);
 }
 

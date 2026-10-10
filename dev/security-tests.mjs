@@ -689,6 +689,31 @@ const tests = [
     }),
 
   () =>
+    check('19b a clean row reads back instantly and stays clean (no per-read migration)', async () => {
+      /* Check 19 already migrated the board. A row with no inline payloads must
+         take the fast path: no rewrite, no drift, and a payload small enough to
+         be text. This is the steady-state the 4s reload fix depends on. */
+      const first = await httpRaw('GET', '/api/state', {});
+      expect(first.status === 200, `state: ${first.status}`);
+      expect(!first.raw.includes('data:image'), 'a clean read reintroduced base64');
+
+      const before = (await httpRaw('GET', '/sb/rest/v1/_test/dump', {})).json.tables.class_state[0];
+      const stamp = before.updated_at;
+
+      for (let i = 0; i < 3; i++) {
+        const again = await httpRaw('GET', '/api/state', {});
+        expect(again.status === 200, `repeat read ${i}: ${again.status}`);
+        expect(!again.raw.includes('data:image'), `repeat read ${i} carried base64`);
+        /* Text sized: a base64 blob would push this into the hundreds of KB. */
+        expect(again.raw.length < 20000, `read ${i} ballooned to ${again.raw.length} bytes`);
+      }
+
+      /* The fast path must not write: a per-read migration would bump updated_at. */
+      const after = (await httpRaw('GET', '/sb/rest/v1/_test/dump', {})).json.tables.class_state[0];
+      expect(after.updated_at === stamp, 'a plain read rewrote the row (migration ran on a clean board)');
+    }),
+
+  () =>
     check('20 logout invalidates the session server side and is idempotent', async () => {
       const { token } = await loginAs(STUDENT.username, STUDENT_NEXT);
       expect(!!token, 'student login failed');
