@@ -1821,10 +1821,56 @@
       item, account, onCycleStatus, onEdit, onDelete,
       onViewImage, onPickImage, onRemoveImage,
       onViewSolutionImage, onPickSolutionImage, onRemoveSolutionImage,
+      onAttachFiles,
     }) {
       const [open, setOpen] = useState(false);
       const [copied, setCopied] = useState(false);
       const [confirming, setConfirming] = useState(false);
+
+      /* Drag and drop: files can be pulled straight from a folder onto the card,
+         which avoids the native file dialog entirely (and with it the Windows
+         File Explorer stalls the wildcard picker could trigger). The whole card
+         is the drop target for card pictures; while the answer panel is open it
+         takes drops for itself. A depth counter keeps the highlight steady as
+         the pointer crosses child elements, which each fire their own enter/leave. */
+      const [dropZone, setDropZone] = useState(null); /* null | 'card' | 'answer' */
+      const cardDragDepth = useRef(0);
+      const answerDragDepth = useRef(0);
+
+      function dropProps(zone, depthRef) {
+        return {
+          onDragEnter: (event) => {
+            if (!canManage) return;
+            event.preventDefault();
+            event.stopPropagation();
+            depthRef.current += 1;
+            setDropZone(zone);
+          },
+          onDragOver: (event) => {
+            if (!canManage) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "copy";
+          },
+          onDragLeave: (event) => {
+            if (!canManage) return;
+            event.stopPropagation();
+            depthRef.current = Math.max(0, depthRef.current - 1);
+            if (!depthRef.current) setDropZone((current) => (current === zone ? null : current));
+          },
+          onDrop: (event) => {
+            if (!canManage) return;
+            event.preventDefault();
+            event.stopPropagation();
+            depthRef.current = 0;
+            setDropZone(null);
+            const files = Array.from((event.dataTransfer && event.dataTransfer.files) || []);
+            if (files.length && onAttachFiles) {
+              onAttachFiles(item, zone === "answer" ? "solutionImages" : "images", files);
+            }
+          },
+        };
+      }
 
       /* The board is shared and read only for everyone except an admin. Adding a
          card is no longer enough to earn the right to change it: whoever posted it
@@ -1935,7 +1981,16 @@
       }
 
       return (
-        <article className={`group relative flex flex-col rounded-[22px] border p-5 shadow-card backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-lift dark:shadow-card-dark glass-sheen sm:p-6 ${cardTone}`}>
+        <article
+          className={`group relative flex flex-col rounded-[22px] border p-5 shadow-card backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-lift dark:shadow-card-dark glass-sheen sm:p-6 ${cardTone} ${dropZone === "card" ? "ring-2 ring-emerald-400" : ""}`}
+          {...dropProps("card", cardDragDepth)}
+        >
+          {dropZone === "card" && (
+            <div className="pointer-events-none absolute inset-3 z-30 flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-50/90 text-center backdrop-blur-sm dark:border-emerald-400/70 dark:bg-slate-900/85">
+              <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Drop files to attach to this card</span>
+              <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">PDF, PNG, JPG or WEBP - up to {MAX_PICTURES} files</span>
+            </div>
+          )}
           <div className="flex items-start justify-between gap-3">
             <span className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
               <span className={`h-1.5 w-1.5 rounded-full ${subjectDot(item.subject)}`} aria-hidden="true" />
@@ -2156,7 +2211,16 @@
 
               <div id={solutionId} className={`grid transition-[grid-template-rows] duration-300 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
                 <div className="overflow-hidden">
-                  <div className="mt-3 rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-4 dark:border-emerald-500/25 dark:bg-emerald-500/10" aria-hidden={!open}>
+                  <div
+                    className="relative mt-3 rounded-xl border border-emerald-200/80 bg-emerald-50/70 p-4 dark:border-emerald-500/25 dark:bg-emerald-500/10"
+                    aria-hidden={!open}
+                    {...dropProps("answer", answerDragDepth)}
+                  >
+                    {dropZone === "answer" && (
+                      <div className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-100/90 text-center text-sm font-semibold text-emerald-700 dark:border-emerald-400/70 dark:bg-slate-900/90 dark:text-emerald-300">
+                        Drop answer files here
+                      </div>
+                    )}
                     <div className="flex items-center justify-between gap-2 border-b border-emerald-200/70 pb-2.5 dark:border-emerald-500/20">
                       <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">
                         Answer and solution
@@ -2586,7 +2650,7 @@
                 id="task-picture"
                 ref={fileRef}
                 type="file"
-                accept="image/*,application/pdf,.pdf"
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
                 multiple
                 className="hidden"
                 onChange={(e) => handleImages(e, "images")}
@@ -2632,7 +2696,7 @@
               <input
                 ref={solutionFileRef}
                 type="file"
-                accept="image/*,application/pdf,.pdf"
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
                 multiple
                 className="hidden"
                 onChange={(e) => handleImages(e, "solutionImages")}
@@ -3555,16 +3619,12 @@
         requestPicture(id, "solution");
       }
 
-      async function handleImagePick(event) {
-        const picked = Array.from(event.target.files || []);
-        event.target.value = "";
-        const target = fileTarget.current;
-        fileTarget.current = null;
-        if (!picked.length || !target) return;
-
-        const item = items.find((i) => i.id === target.id);
-        if (!item) return;
-        const key = target.kind === "solution" ? "solutionImages" : "images";
+      /* One upload path shared by the file picker and the card dropzone, so both
+         land in the same bucket and report failures the same way. It takes an
+         already-resolved item (not an id) so a drop on a card can hand over the
+         exact card under the cursor without a second lookup. */
+      async function attachFiles(item, key, picked) {
+        if (!item || !picked.length) return;
         const existing = item[key] || [];
         const room = Math.max(0, MAX_PICTURES - existing.length);
         if (!room) {
@@ -3573,7 +3633,7 @@
         }
 
         const files = picked.slice(0, room);
-        const where = target.kind === "solution" ? "the answer" : "the card";
+        const where = key === "solutionImages" ? "the answer" : "the card";
         notify("Attaching " + files.length + " file" + (files.length === 1 ? "" : "s") + " to " + where, "info");
 
         const added = [];
@@ -3589,12 +3649,24 @@
           notify(failure || "No files were uploaded.", "danger");
           return;
         }
-        onAddPictures(target.id, key, added);
+        onAddPictures(item.id, key, added);
         const skipped = picked.length - added.length;
         notify(
           added.length + (added.length === 1 ? " file added to " : " files added to ") + where +
             (skipped > 0 ? ". " + skipped + " skipped, the limit is " + MAX_PICTURES : "")
         );
+      }
+
+      async function handleImagePick(event) {
+        const picked = Array.from(event.target.files || []);
+        event.target.value = "";
+        const target = fileTarget.current;
+        fileTarget.current = null;
+        if (!picked.length || !target) return;
+
+        const item = items.find((i) => i.id === target.id);
+        if (!item) return;
+        await attachFiles(item, target.kind === "solution" ? "solutionImages" : "images", picked);
       }
 
       return (
@@ -3807,6 +3879,7 @@
                         onViewSolutionImage={(target, index) => setLightbox({ id: target.id, kind: "solution", index: index || 0 })}
                         onPickSolutionImage={pickSolutionImage}
                         onRemoveSolutionImage={(id, index) => onRemovePicture(id, "solutionImages", index)}
+                        onAttachFiles={attachFiles}
                       />
                     ))}
                   </div>
@@ -3852,7 +3925,7 @@
             </main>
           </div>
 
-          <input ref={fileRef} type="file" accept="image/*,application/pdf,.pdf" multiple className="hidden" onChange={handleImagePick} />
+          <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple className="hidden" onChange={handleImagePick} />
 
           <TaskModal
             open={modalOpen}
