@@ -115,10 +115,9 @@
       { key: "subject", label: "Subject" },
       { key: "dueDate", label: "Due date" },
       { key: "description", label: "Description" },
-    ];
-
-    /* Pictures per assignment, per part. Six at the reduced fill budget stays
-       inside the 5 MB browser store even on a photo heavy board. */
+    ];    /* Pictures per assignment, per part. Six keeps a card readable; the files
+       themselves live in Storage, so a photo heavy board no longer decides
+       whether the browser store or the first paint survives. */
     const MAX_PICTURES = 6;
 
     const SEED = [
@@ -473,6 +472,10 @@
 
     async function remotePull() {
       const { data } = await remoteRequest("/state");
+      /* The realtime doorbell config doubles as the browser's Storage
+         credential: same publishable key, same origin. Captured on every
+         pull so uploads never need a second round trip. */
+      if (data && data.ok && data.realtime) storageConfig = data.realtime;
       return data && data.ok ? data : null;
     }
 
@@ -715,91 +718,9 @@
       return "later";
     }
 
-    /* Resizing is where picture quality is won or lost. The rules:
-       never upscale, keep the long edge inside a budget, shrink in halves instead
-       of one big jump (a single jump softens fine text), and only drop to a
-       smaller encode when the result would eat too much of the 5 MB browser budget. */
-    const IMAGE_STEPS = [
-      { maxEdge: 1800, quality: 0.9 },
-      { maxEdge: 1400, quality: 0.86 },
-      { maxEdge: 1100, quality: 0.82 },
-      { maxEdge: 900, quality: 0.78 },
-    ];
-    const IMAGE_CHAR_BUDGET = 480 * 1024; /* data URL characters, so roughly 360 KB of bytes */
-    const IMAGE_CHAR_BUDGET_FILL = 300 * 1024; /* extra pictures in a set are encoded tighter */
-
-    function drawScaled(source, targetW, targetH) {
-      const canvas = document.createElement("canvas");
-      canvas.width = targetW;
-      canvas.height = targetH;
-      const ctx = canvas.getContext("2d");
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, targetW, targetH);
-
-      let stage = source;
-      let stageW = source.naturalWidth || source.width;
-      let stageH = source.naturalHeight || source.height;
-      while (stageW > targetW * 2 && stageH > targetH * 2) {
-        const halfW = Math.max(targetW, Math.round(stageW / 2));
-        const halfH = Math.max(targetH, Math.round(stageH / 2));
-        const stepCanvas = document.createElement("canvas");
-        stepCanvas.width = halfW;
-        stepCanvas.height = halfH;
-        const stepCtx = stepCanvas.getContext("2d");
-        stepCtx.imageSmoothingEnabled = true;
-        stepCtx.imageSmoothingQuality = "high";
-        stepCtx.drawImage(stage, 0, 0, halfW, halfH);
-        stage = stepCanvas;
-        stageW = halfW;
-        stageH = halfH;
-      }
-
-      ctx.drawImage(stage, 0, 0, targetW, targetH);
-      return canvas;
-    }
-
-    /** Resize and compress a picked image into a data URL small enough to store. */
-    function processImage(file, budget) {
-      return new Promise((resolve, reject) => {
-        if (!file || !file.type || !file.type.startsWith("image/")) {
-          reject(new Error("That file is not an image."));
-          return;
-        }
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error("That file could not be read."));
-        reader.onload = () => {
-          const img = new Image();
-          img.onerror = () => reject(new Error("That image could not be decoded."));
-          img.onload = () => {
-            const sourceW = img.naturalWidth || img.width;
-            const sourceH = img.naturalHeight || img.height;
-
-            /* Vectors and a few odd formats report no intrinsic size. Keep the
-               original bytes rather than collapsing them to one pixel. */
-            if (!sourceW || !sourceH) {
-              resolve(String(reader.result));
-              return;
-            }
-
-            const longestEdge = Math.max(sourceW, sourceH);
-            const limit = budget || IMAGE_CHAR_BUDGET;
-            let encoded = "";
-            for (const step of IMAGE_STEPS) {
-              const scale = longestEdge > step.maxEdge ? step.maxEdge / longestEdge : 1;
-              const targetW = Math.max(1, Math.round(sourceW * scale));
-              const targetH = Math.max(1, Math.round(sourceH * scale));
-              encoded = drawScaled(img, targetW, targetH).toDataURL("image/jpeg", step.quality);
-              if (encoded.length <= limit) break;
-            }
-            resolve(encoded);
-          };
-          img.src = reader.result;
-        };
-        reader.readAsDataURL(file);
-      });
-    }
+    /* Pick history: files are handed to uploadFile() as typed blobs straight
+       from the input - no canvas re-encoding - so a PNG stays a PNG and a PDF
+       stays a PDF all the way into the assignments Storage bucket. */
 
     function downloadBackup(items, config) {
       const payload = {
@@ -833,38 +754,87 @@
         };
         reader.readAsText(file);
       });
+    }    /* Files are uploaded straight to Supabase Storage as typed blobs, so the
+       filename keeps its real extension and the download keeps its real MIME
+       type. The board row only ever receives the public URL this returns. */
+    let storageConfig = null;
+    let storageClientPromise = null;
+
+    function getStorageClient() {
+      if (!storageConfig || !storageConfig.url || !storageConfig.anonKey) {
+        return Promise.reject(
+          new Error("File storage is not connected yet - wait for the board to finish loading.")
+        );
+      }
+      if (!storageClientPromise) {
+        storageClientPromise = import("@supabase/supabase-js").then(({ createClient }) =>
+          createClient(storageConfig.url, storageConfig.anonKey, { auth: { persistSession: false } })
+        );
+      }
+      return storageClientPromise;
     }
 
-    /* Files are uploaded straight to Supabase Storage as typed blobs, so the
-       filename keeps its real extension and the download keeps its real MIME
-       type. No base64 re-encoding, no squeezed JPEG fallback for PDFs. */
-    function uploadFile(file) {
-      const name = String(file && file.name) || "untitled." + (file && file.type ? file.type.slice(6) : "pdf");
-      const ext = file.name.split(".").pop()?.toLowerCase() || "pdf";
-      const path = "assignments/" + Date.now().toString(36) + "-" + uid().slice(2, 6) + "." + ext;
-      let ctx = { ok: false, path };
-      try {
-        const { data, error } = supabase.storage.from("assignments").upload(path, file, {
-          cacheControl: "3600000",
-          upsert: false,
-        });
-        if (error) throw error;
-        if (!data || !data.publicUrl) throw new Error("No public URL from storage.");
-        ctx.ok = true;
-      } catch (err) {
-        ctx.ok = false;
-        ctx.error = err && err.message ? err.message : String(err);
+    const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; /* matches the bucket's file_size_limit */
+    const UPLOAD_TYPES = /^(application\/pdf|image\/(png|jpe?g|webp|gif|avif|bmp|svg\+xml))$/;
+
+    function uploadExt(file) {
+      const fromName = /\.([a-z0-9]+)$/i.exec(String(file.name || ""));
+      if (fromName) return fromName[1].toLowerCase();
+      if (file.type === "application/pdf") return "pdf";
+      const fromType = /^image\/([a-z0-9.+]+)$/i.exec(file.type || "");
+      if (fromType) return fromType[1].toLowerCase().replace("jpeg", "jpg");
+      return "bin";
+    }
+
+    function humanUploadError(error) {
+      const msg = String((error && error.message) || error || "").toLowerCase();
+      if (msg.includes("mime") || msg.includes("content-type") || msg.includes("allowed")) {
+        return "That file type is not allowed in the class bucket.";
       }
-      return ctx;
+      if (msg.includes("exceed") || msg.includes("too large") || msg.includes("size")) {
+        return "That file is over the 10 MB storage limit.";
+      }
+      if (msg.includes("bucket")) return "The assignments bucket is missing - run supabase/schema.sql.";
+      if (msg.includes("policy") || msg.includes("row-level security")) {
+        return "Storage rejected the upload - check the bucket policies in supabase/schema.sql.";
+      }
+      return (error && error.message) || "That file could not be uploaded.";
+    }
+
+    async function uploadFile(file) {
+      const type = String((file && file.type) || "").toLowerCase();
+      if (!UPLOAD_TYPES.test(type)) {
+        throw new Error("Only PDF documents and common image types can be attached.");
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        throw new Error("That file is over the 10 MB upload limit.");
+      }
+      /* Timestamp plus a random suffix: unique enough that no upload can
+         overwrite another, and the extension is taken from the picked file so
+         downloads keep their real .pdf / .png / .jpg name. */
+      const path = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8) + "." + uploadExt(file);
+      const supabase = await getStorageClient();
+      const { error } = await supabase.storage.from("assignments").upload(path, file, {
+        contentType: type,
+        cacheControl: "3600000",
+        upsert: false,
+      });
+      if (error) throw new Error(humanUploadError(error));
+      const { data } = supabase.storage.from("assignments").getPublicUrl(path);
+      if (!data || !data.publicUrl) throw new Error("Storage kept the file but returned no link.");
+      return data.publicUrl;
     }
 
     /* Pictures are stored as arrays. Older saves and backups carry a single
-       string instead, so both shapes are accepted and merged here. */
+       string instead, so both shapes are accepted and merged here. Only http(s)
+       links survive: an inline base64 payload from an old row or an old local
+       copy is dropped so the board paints without parsing megabytes. */
     function toImageList(list, legacy) {
       const out = [];
-      if (Array.isArray(list)) out.push(...list.filter((src) => typeof src === "string" && src));
-      else if (typeof list === "string" && list) out.push(list);
-      if (typeof legacy === "string" && legacy && !out.includes(legacy)) out.push(legacy);
+      const link = (src) => typeof src === "string" && /^https?:\/\//.test(src);
+      if (Array.isArray(list)) out.push(...list.filter(link));
+      else if (link(list)) out.push(list);
+      if (link(legacy) && !out.includes(legacy)) out.push(legacy);
       return out.slice(0, MAX_PICTURES);
     }
 
@@ -891,107 +861,78 @@
        Shared class strings
        ============================================================ */
 
-    /* Files live in a dedicated Supabase Storage bucket (assignments). The
-       database row holds only the clean public URL, so the first render never
-       parses a base64 blob and Chrome never sees a data: URI. */
-    /* A file object is { id, src (public URL), name, type, size, ext }. */
-    function fileToPublicUrl(file) {
-      const name = String(file && file.name) || "untitled";
-      const ext = (file && file.type === "application/pdf") ? "pdf"
-        : (file && file.type && file.type.startsWith("image/") ? file.type.slice(6)
-           : (name.split(".").pop() || "pdf").toLowerCase());
-      return Promise.resolve({
-        id: uid(),
-        src: "https://<project-ref>.supabase.co/storage/v1/object/public/assignments/" + encodeURIComponent(name),
-        name: name,
-        type: file && file.type ? file.type : "application/octet-stream",
-        size: file && file.size ? file.size : 0,
-        ext: ext || "pdf",
-      });
-    }
-
+    /* One rule for every file the app shows: it is a link into the assignments
+       Storage bucket and the browser renders it from that URL directly. No
+       data: URI reaches the address bar, no base64 sits in a row. */
     function isPdf(src) {
-      const s = String(src || "");
-      return s.startsWith("data:application/pdf") || s.endsWith(".pdf") || s === "pdf";
+      const s = String(src || "").split(/[?#]/)[0];
+      if (s.startsWith("data:application/pdf")) return true;
+      return /\.pdf$/i.test(s);
     }
 
     function fileExt(src) {
       const s = String(src || "");
-      if (s.startsWith("data:")) return s.split("/")[1]?.split(";")[0] || "pdf";
-      return s.split(".").pop()?.toLowerCase() || "pdf";
+      if (s.startsWith("data:")) return (s.split(";")[0].split("/")[1] || "pdf").toLowerCase();
+      const clean = s.split(/[?#]/)[0];
+      const seg = clean.split("/").pop() || "";
+      const ext = seg.includes(".") ? seg.split(".").pop() : "";
+      return (ext || (isPdf(s) ? "pdf" : "")).toLowerCase();
     }
 
-    function fileMime(src) {
-      const s = String(src || "");
-      if (s.startsWith("data:")) return s.split(";")[0].split(":")[1] || "application/octet-stream";
-      if (/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(s)) return "image/" + s.split(".").pop()?.toLowerCase();
-      return fileExt(s).startsWith("pdf") ? "application/pdf" : "application/octet-stream";
-    }
-
-    function pictureFileName(title, src) {
+    /* The name a download lands under: card title plus the extension that is
+       actually in the URL. No derived indexes, so "NaN" can never appear. */
+    function pictureFileName(title, index, src) {
       const base = String(title || "assignment").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "assignment";
-      const ext = fileExt(src) || "pdf";
-      return base + "-" + ext + "." + ext.replace(/^pdf$/i, "pdf");
+      const ext = fileExt(src) || (isPdf(src) ? "pdf" : "jpg");
+      const at = Number.isFinite(index) ? "-" + (index + 1) : "";
+      const kind = isPdf(src) ? "document" : "picture";
+      return base + "-" + kind + at + "." + ext;
     }
 
-    async function downloadPicture(src, title) {
-      const name = pictureFileName(title, src);
+    /* Download keeps the original extension and MIME type: the bytes come
+       straight off Storage with their Content-Type, and the name is rebuilt
+       from the card title plus the extension in the URL. */
+    async function downloadPicture(src, title, index) {
+      const url = String(src || "");
+      if (!url) return;
+      const name = pictureFileName(title, index, url);
       try {
-        const blob = await fetch(src).then((r) => r.blob());
-        const url = URL.createObjectURL(blob);
+        const res = await fetch(url, { mode: "cors" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = url;
+        a.href = objectUrl;
         a.download = name;
         document.body.appendChild(a);
         a.click();
         a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
       } catch (err) {
-        window.open(src, "_blank", "noopener");
+        /* CORS or offline: ask Storage to send it as a download instead. */
+        const forced = url + (url.includes("?") ? "&" : "?") + "download=" + encodeURIComponent(name);
+        window.open(forced, "_blank", "noopener");
       }
     }
 
+    /* PDFs open from their direct Storage URL: the browser's native viewer
+       renders it, which is exactly what a data: URI tab used to block. An
+       inline leftover from an old row is rewrapped as a blob first, because
+       Chrome refuses top level navigation to data: URLs. */
     async function openPdfDocument(src) {
-      if (isPdf(src)) {
-        try {
-          const blob = await fetch(src).then((r) => r.blob());
-          const url = URL.createObjectURL(blob);
-          window.open(url, "_blank", "noopener");
-          setTimeout(() => URL.revokeObjectURL(url), 60000);
-          return;
-        } catch (err) {
-          /* fall through to the fallback below */
-        }
-      }
-      window.open(String(src), "_blank", "noopener");
-    }
-
-    /* Chrome refuses top level navigation to data: URLs, so the bytes are
-       rewrapped as a blob URL before opening. A direct open is the fallback
-       for remote files whose fetch is blocked. */
-    async function openPdfDocument(src) {
-      if (isPdf(src)) {
-        try {
-          const bytes = atob(String(src).split(",")[1]);
-          const mime = String(src).split(";")[0].split(":")[1] || "application/pdf";
-          const url = URL.createObjectURL(
-            new Blob([new Uint8Array(bytes.split("").map((ch) => ch.charCodeAt(0)))], { type: mime })
-          );
-          window.open(url, "_blank", "noopener");
-          setTimeout(() => URL.revokeObjectURL(url), 60000);
-          return;
-        } catch (err) {
-          /* fall through to the remote fetch path below */
-        }
+      const url = String(src || "");
+      if (!url) return;
+      if (!url.startsWith("data:")) {
+        window.open(url, "_blank", "noopener");
+        return;
       }
       try {
-        const res = await fetch(src, { mode: "cors" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const url = URL.createObjectURL(await res.blob());
-        window.open(url, "_blank", "noopener");
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        const res = await fetch(url);
+        const objectUrl = URL.createObjectURL(await res.blob());
+        window.open(objectUrl, "_blank", "noopener");
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
       } catch (err) {
-        window.open(src, "_blank", "noopener");
+        window.open(url, "_blank", "noopener");
       }
     }
 
@@ -2050,7 +1991,7 @@
                     {isPdf(src) ? (
                       <button
                         type="button"
-                        onClick={() => openPdfDocument({ id: item.id, index: index, src: src })}
+                        onClick={() => openPdfDocument(src)}
                         title="View document"
                         aria-label={"Open document " + (index + 1) + " of " + item.title}
                         className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-rose-500/10 to-transparent text-slate-500 transition duration-300 group-hover/img:from-rose-500/20 dark:from-rose-500/15 dark:text-slate-300"
@@ -2095,7 +2036,7 @@
                     )}
                     <button
                       type="button"
-                      onClick={() => downloadPicture({ id: item.id, index: index, src: src, title: item.title })}
+                      onClick={() => downloadPicture(src, item.title, index)}
                       title="Download full resolution"
                       aria-label={"Download picture " + (index + 1) + " of " + item.title}
                       className="absolute bottom-2 right-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-lg bg-slate-950/55 text-white/85 ring-1 ring-inset ring-white/15 backdrop-blur-md transition hover:bg-slate-950/80 hover:text-white focus-visible:opacity-100"
@@ -2245,7 +2186,7 @@
                             {isPdf(src) ? (
                               <button
                                 type="button"
-                                onClick={() => openPdfDocument({ id: item.id, index: index, src: src })}
+                                onClick={() => openPdfDocument(src)}
                                 tabIndex={open ? 0 : -1}
                                 title="View document"
                                 aria-label={"Open answer document " + (index + 1) + " of " + item.title}
@@ -2266,7 +2207,7 @@
                             )}
                             <button
                               type="button"
-                              onClick={() => downloadPicture({ id: item.id, index: index, src: src, title: item.title })}
+                              onClick={() => downloadPicture(src, item.title, index)}
                               tabIndex={open ? 0 : -1}
                               title="Download full resolution"
                               aria-label={"Download answer picture " + (index + 1) + " of " + item.title}
@@ -2353,7 +2294,7 @@
                   {isPdf(src) ? (
                     <button
                       type="button"
-                      onClick={() => openPdfDocument({ id: item.id, index: index, src: src })}
+                      onClick={() => openPdfDocument(src)}
                       title="View document"
                       aria-label={"Open document " + (index + 1)}
                       className="flex h-28 w-full flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-rose-500/10 to-transparent text-slate-500 transition hover:from-rose-500/20 dark:from-rose-500/15 dark:text-slate-300"
@@ -2471,25 +2412,15 @@
         }
 
         const files = picked.slice(0, room);
-        /* The first picture keeps full quality, the rest are encoded tighter so a
-           set of six still fits comfortably inside the browser storage budget. */
-        const budget = existing.length ? IMAGE_CHAR_BUDGET_FILL : IMAGE_CHAR_BUDGET;
         setBusy((b) => ({ ...b, [key]: b[key] + files.length }));
 
         const added = [];
         let failure = "";
         for (const file of files) {
           try {
-            for (const file of files) {
-          try {
-            const f = await fileToPublicUrl(file);
-            added.push(f);
+            added.push(await uploadFile(file));
           } catch (err) {
-            failure = err.message || "One file could not be loaded.";
-          }
-        }
-          } catch (err) {
-            failure = err.message || "One file could not be loaded.";
+            failure = (err && err.message) || "One file could not be uploaded.";
           }
         }
         setBusy((b) => ({ ...b, [key]: Math.max(0, b[key] - files.length) }));
@@ -2628,7 +2559,7 @@
               optional
               className="sm:col-span-2"
               error={imageErrors.images}
-              hint="The brief, whiteboard or notes. Select several files at once. Stored in this browser only."
+              hint="The brief, whiteboard or notes. Select several files at once. Uploaded straight to the class's file storage."
             >
               <PictureGrid
                 images={form.images}
@@ -3627,26 +3558,22 @@
         }
 
         const files = picked.slice(0, room);
-        const budget = existing.length ? IMAGE_CHAR_BUDGET_FILL : IMAGE_CHAR_BUDGET;
         const where = target.kind === "solution" ? "the answer" : "the card";
         notify("Attaching " + files.length + " file" + (files.length === 1 ? "" : "s") + " to " + where, "info");
 
         const added = [];
+        let failure = "";
         for (const file of files) {
           try {
-            for (const file of files) {
-          try {
-            const f = await fileToPublicUrl(file);
-            added.push(f);
+            added.push(await uploadFile(file));
           } catch (err) {
-            failure = err.message || "One file could not be loaded.";
+            failure = (err && err.message) || "That file could not be uploaded.";
           }
         }
-          } catch (err) {
-            notify(err.message || "One file could not be loaded", "danger");
-          }
+        if (!added.length) {
+          notify(failure || "No files were uploaded.", "danger");
+          return;
         }
-        if (!added.length) return;
         onAddPictures(target.id, key, added);
         const skipped = picked.length - added.length;
         notify(

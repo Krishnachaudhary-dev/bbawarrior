@@ -18,6 +18,11 @@ import { createHash } from 'node:crypto';
  *
  * GET /_test/dump returns raw rows, which is how the tests assert that only
  * password hashes are ever written and that sessions are really deleted.
+ *
+ * The Storage surface the app actually uses is faked too: multipart upload to
+ * the assignments bucket, public GET of an object, and the ?download=
+ * disposition, so the real supabase-js upload()/getPublicUrl() path runs
+ * locally end to end.
  */
 
 export function tokenHashOf(token) {
@@ -29,11 +34,14 @@ export function createFakeSupabase({ secretKey }) {
     class_state: [],
     class_sessions: [],
   };
+  /* Storage objects: key "bucket/path" -> { bytes, contentType }. */
+  const objects = new Map();
   let mode = 'ok';
 
   function reset() {
     tables.class_state = [];
     tables.class_sessions = [];
+    objects.clear();
   }
 
   function parseFilters(searchParams) {
@@ -84,8 +92,119 @@ export function createFakeSupabase({ secretKey }) {
     return match ? match[1].trim() : '';
   }
 
-  async function handle(req, res, searchParams, body) {
-    const pathname = new URL(req.url, 'http://fake.local').pathname.replace(/^(\/sb)?\/rest\/v1/, '');
+  /* ---- Storage surface -------------------------------------------------
+     Mirrors supabase/storage's POST /object (multipart) and GET
+     /object/public, with the same bucket name, MIME allow-list and size cap
+     that supabase/schema.sql configures, so a client that would fail in
+     production fails here too. */
+  const STORAGE_BUCKET = 'assignments';
+  const STORAGE_MIME = new Set([
+    'application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+    'image/avif', 'image/bmp', 'image/svg+xml',
+  ]);
+  const STORAGE_MAX_BYTES = 10 * 1024 * 1024;
+
+  function storageError(res, status, message, error) {
+    return json(res, status, { message, error, statusCode: status });
+  }
+
+  function parseMultipart(buffer, contentType) {
+    const match = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(String(contentType || ''));
+    if (!match) return null;
+    const boundary = Buffer.from('--' + (match[1] || match[2]).trim());
+    const fields = {};
+    let file = null;
+    let cursor = buffer.indexOf(boundary);
+    while (cursor !== -1) {
+      const start = cursor + boundary.length;
+      const next = buffer.indexOf(boundary, start);
+      if (next === -1) break;
+      const part = buffer.slice(start, next);
+      cursor = next;
+      const headerEnd = part.indexOf('\r\n\r\n');
+      if (headerEnd === -1) continue;
+      const headers = part.slice(0, headerEnd).toString('utf8');
+      const content = part.slice(headerEnd + 4, part.length - 2);
+      const disposition = /content-disposition:\s*([^\r\n]+)/i.exec(headers);
+      if (!disposition) continue;
+      const filenameMatch = /filename="([^"]*)"/.exec(disposition[1]);
+      const nameMatch = /name="([^"]*)"/.exec(disposition[1]);
+      if (filenameMatch || (nameMatch && nameMatch[1] === '')) {
+        const ctMatch = /content-type:\s*([^\r\n]+)/i.exec(headers);
+        file = {
+          bytes: content,
+          contentType: ctMatch ? ctMatch[1].trim() : '',
+          filename: filenameMatch ? filenameMatch[1] : '',
+        };
+      } else if (nameMatch) {
+        fields[nameMatch[1]] = content.toString('utf8');
+      }
+    }
+    if (!file) return null;
+    return { fields, file };
+  }
+
+  async function storageHandle(req, res, searchParams, raw, rawPath) {
+    const segments = rawPath.replace(/^(?:\/sb)?\/storage\/v1\/object\//, '').split('/');
+    const qualifier = ['public', 'sign', 'authenticated'].includes(segments[0]) ? segments.shift() : '';
+    const bucket = decodeURIComponent(segments[0] || '');
+    const objectPath = segments.slice(1).map(decodeURIComponent).join('/');
+
+    if (req.method === 'POST' || req.method === 'PUT') {
+      const apiKey = req.headers.apikey || bearerOf(req.headers.authorization);
+      const publishable = process.env.SUPABASE_PUBLISHABLE_KEY || '';
+      if (!apiKey || (apiKey !== secretKey && apiKey !== publishable)) {
+        return storageError(res, 401, 'Invalid API key', 'invalid_api_key');
+      }
+      if (bucket !== STORAGE_BUCKET) return storageError(res, 404, `Bucket ${bucket} not found`, 'not_found');
+      /* Two upload shapes, same as real Storage: a Blob rides multipart/form-data
+         (the browser's pick), a Buffer rides as a raw body with its own
+         content-type header (the server side migration). */
+      const requestType = String(req.headers['content-type'] || '');
+      let fileBytes = null;
+      let contentType = '';
+      if (requestType.toLowerCase().includes('multipart/form-data')) {
+        const parsed = raw ? parseMultipart(raw, requestType) : null;
+        if (!parsed) return storageError(res, 400, 'Could not parse the multipart body', 'invalid_request');
+        fileBytes = parsed.file.bytes;
+        contentType = parsed.file.contentType || parsed.fields.contentType || '';
+      } else {
+        fileBytes = raw || Buffer.alloc(0);
+        contentType = requestType;
+      }
+      contentType = String(contentType || 'application/octet-stream').toLowerCase();
+      if (!STORAGE_MIME.has(contentType)) return storageError(res, 400, `MIME type ${contentType} is not allowed`, 'invalid_mime_type');
+      if (fileBytes.length > STORAGE_MAX_BYTES) return storageError(res, 413, 'Payload too large', 'too_large');
+      objects.set(`${bucket}/${objectPath}`, { bytes: Buffer.from(fileBytes), contentType });
+      return json(res, 200, { Id: `${bucket}/${objectPath}`, Key: `${bucket}/${objectPath}` });
+    }
+
+    if (req.method === 'GET') {
+      const stored = objects.get(`${bucket}/${objectPath}`);
+      if (!stored) return storageError(res, 404, 'Object not found', 'not_found');
+      const headers = {
+        'content-type': stored.contentType || 'application/octet-stream',
+        'content-length': String(stored.bytes.length),
+        'access-control-allow-origin': '*',
+        'cache-control': 'public, max-age=3600',
+      };
+      if (searchParams.has('download')) {
+        const asked = searchParams.get('download');
+        const name = String(asked || objectPath.split('/').pop() || 'file').replace(/[^\w.-]+/g, '_');
+        headers['content-disposition'] = `attachment; filename="${name}"`;
+      }
+      res.writeHead(200, headers);
+      return res.end(stored.bytes);
+    }
+
+    return storageError(res, 405, 'Method not allowed', 'method_not_allowed');
+  }
+
+  async function handle(req, res, searchParams, body, raw) {
+    const rawPath = new URL(req.url, 'http://fake.local').pathname;
+    /* Storage traffic never enters the PostgREST surface below. */
+    if (rawPath.includes('/storage/v1/')) return storageHandle(req, res, searchParams, raw, rawPath);
+    const pathname = rawPath.replace(/^(\/sb)?\/rest\/v1/, '');
     const table = pathname.replace(/^\//, '').split('/')[0];
 
     /* ---- test backdoors (not part of the PostgREST surface) ---- */
@@ -108,7 +227,25 @@ export function createFakeSupabase({ secretKey }) {
       return json(res, 200, { ok: true });
     }
     if (pathname === '/_test/dump') {
-      return json(res, 200, { ok: true, tables });
+      const storage = [...objects.entries()].map(([key, value]) => ({
+        key,
+        contentType: value.contentType,
+        size: value.bytes.length,
+      }));
+      return json(res, 200, { ok: true, tables, storage });
+    }
+    if (pathname === '/_test/append-item') {
+      /* Adds one card to whatever board exists without touching accounts, so
+         a test can seed an inline-file row and still keep its sessions. */
+      const row = tables.class_state[0] || { id: 'section-h' };
+      const doc = row.data && typeof row.data === 'object' ? row.data : {};
+      const items = Array.isArray(doc.items) ? doc.items : [];
+      tables.class_state[0] = {
+        ...row,
+        data: { ...doc, items: [...items, (body && body.item) || {}] },
+        updated_at: new Date().toISOString(),
+      };
+      return json(res, 200, { ok: true });
     }
     if (mode === 'fail') {
       return json(res, 500, { message: 'fake database failure' });

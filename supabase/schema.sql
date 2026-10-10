@@ -51,3 +51,42 @@ alter table public.class_sessions enable row level security;
 
 -- Sanity check: this should say zero rows of policies on class_sessions too.
 select count(*) from pg_policies where tablename = 'class_sessions';
+
+-- ---------------------------------------------------------------------------
+-- Assignment files (PDFs and pictures) live in Storage, never in the row.
+-- The class_state document holds only short public URLs; readState() strips
+-- inline base64 and saveBoard() refuses it, so a board read stays text sized.
+-- The bucket is public for reads (the picture tiles and the PDF viewer load
+-- the URL directly); inserts go through the publishable key under this narrow
+-- policy plus the bucket's own size and MIME allow-list. The server side key
+-- is what the local harness and the legacy-row migration use, and it bypasses
+-- these policies the same way it bypasses the table policies above.
+-- ---------------------------------------------------------------------------
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'assignments',
+  'assignments',
+  true,
+  10485760, -- 10 MB, mirrored by MAX_ATTACHMENT_BYTES in api/_db.js
+  array['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif', 'image/bmp', 'image/svg+xml']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "assignment files: insert" on storage.objects;
+create policy "assignment files: insert"
+  on storage.objects for insert
+  to anon, authenticated
+  with check (bucket_id = 'assignments');
+
+drop policy if exists "assignment files: read" on storage.objects;
+create policy "assignment files: read"
+  on storage.objects for select
+  to anon, authenticated
+  using (bucket_id = 'assignments');
+
+-- Sanity check: the bucket should exist and be public.
+select id, public from storage.buckets where id = 'assignments';

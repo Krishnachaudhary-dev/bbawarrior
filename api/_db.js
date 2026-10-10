@@ -249,59 +249,185 @@ export function realtimeConfig() {
   const anonKey = publishableKey();
   if (!url || !anonKey) return null;
   return { url, anonKey };
+}/** The bucket that holds assignment PDFs and pictures. Files live here; a row
+   only ever holds a short public URL, never the bytes. */
+const BUCKET = 'assignments';
+
+/** Mirrors the bucket's file_size_limit (see supabase/schema.sql). */
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+const MIME_EXTENSIONS = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/avif': 'avif',
+  'image/bmp': 'bmp',
+  'image/svg+xml': 'svg',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
+  'image/tiff': 'tiff',
+};
+
+function extForMime(mime) {
+  const type = String(mime || '').toLowerCase().split(';')[0].trim();
+  if (MIME_EXTENSIONS[type]) return MIME_EXTENSIONS[type];
+  const subtype = type.includes('/') ? type.split('/')[1] : '';
+  const safe = subtype.replace(/[^a-z0-9]/g, '').slice(0, 5);
+  return safe || 'bin';
+}
+
+/** True only for a file that lives in OUR assignments bucket on OUR Supabase
+   project: the one URL shape saveBoard will store in a row. This makes
+   "never base64, never a foreign hotlink" an enforced rule, not a convention. */
+export function isAttachmentUrl(src) {
+  if (typeof src !== 'string' || !src || src.length > 2048) return false;
+  const base = String(process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  if (!base) return false;
+  const uploads = `${base}/storage/v1/object/public/${BUCKET}/`;
+  const signed = `${base}/storage/v1/object/sign/${BUCKET}/`;
+  return src.startsWith(uploads) || src.startsWith(signed);
+}
+
+/* ----------------------------------------------------------------------
+   Legacy rows held whole files as data: URLs inside items. Every read
+   strips them - those payloads are what made each reload take seconds -
+   and, when it can, moves them to Storage first so nothing is lost: the
+   bytes upload to the assignments bucket and the row keeps only the public
+   URL. Failures are logged and the row keeps its inline copy until a later
+   read can finish the move.
+   ---------------------------------------------------------------------- */
+
+const INLINE_KEYS = ['images', 'solutionImages'];
+const INLINE_SCALAR_KEYS = ['image', 'solutionImage'];
+
+function collectInlineFiles(state) {
+  const items = Array.isArray(state.items) ? state.items : [];
+  const jobs = [];
+  items.forEach((item, i) => {
+    if (!item || typeof item !== 'object') return;
+    INLINE_KEYS.forEach((key) => {
+      const list = item[key];
+      if (!Array.isArray(list)) return;
+      list.forEach((src, j) => {
+        if (typeof src === 'string' && src.startsWith('data:')) jobs.push({ id: `${i}|${key}|${j}`, src });
+      });
+    });
+    INLINE_SCALAR_KEYS.forEach((key) => {
+      const src = item[key];
+      if (typeof src === 'string' && src.startsWith('data:')) jobs.push({ id: `${i}|${key}|-1`, src });
+    });
+  });
+  return jobs;
+}
+
+/** data:<mime>;base64,<payload> -> public URL in the assignments bucket. */
+async function uploadInlineDataUrl(src) {
+  const comma = src.indexOf(',');
+  if (src.slice(0, 5) !== 'data:' || comma < 0) throw new Error('not a data URL');
+  const header = src.slice(5, comma);
+  if (!header.toLowerCase().includes(';base64')) throw new Error('inline file is not base64');
+  const mime = (header.split(';')[0] || '').toLowerCase();
+  const bytes = Buffer.from(src.slice(comma + 1), 'base64');
+  if (!bytes.length) throw new Error('inline file is empty');
+  if (bytes.length > MAX_ATTACHMENT_BYTES) throw new Error('inline file exceeds the storage limit');
+  const path = `legacy-${Date.now().toString(36)}-${randomBytes(3).toString('hex')}.${extForMime(mime)}`;
+  const storage = client().storage.from(BUCKET);
+  const { error } = await storage.upload(path, bytes, {
+    contentType: mime || 'application/octet-stream',
+    cacheControl: '3600000',
+    upsert: false,
+  });
+  if (error) throw error;
+  const { data } = storage.getPublicUrl(path);
+  if (!data || !data.publicUrl) throw new Error('Storage returned no public URL');
+  return data.publicUrl;
+}
+
+/** Serialises concurrent readers so two polling clients never upload the same
+   inline file twice inside one instance. */
+let inlineMigration = Promise.resolve();
+
+function migrateInlineFiles(state) {
+  const run = inlineMigration.then(
+    () => migrateInlineNow(state),
+    () => migrateInlineNow(state),
+  );
+  inlineMigration = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function migrateInlineNow(state) {
+  const jobs = collectInlineFiles(state);
+  if (!jobs.length) return state;
+
+  const moved = new Map();
+  for (const job of jobs) {
+    try {
+      moved.set(job.id, await uploadInlineDataUrl(job.src));
+    } catch (err) {
+      console.error('[api/_db] inline file move to Storage failed:', describeError(err).message);
+    }
+  }
+
+  /* keepFailures=true  -> the stored document (moved URLs, unmovable originals)
+     keepFailures=false -> what the client sees (moved URLs only; a file whose
+     move failed stays in the row for the next attempt but never reaches a
+     response, so reads stay text sized either way). */
+  function project(item, i, keepFailures) {
+    if (!item || typeof item !== 'object') return item;
+    const out = { ...item };
+    INLINE_KEYS.forEach((key) => {
+      if (!Array.isArray(out[key])) return;
+      const next = [];
+      out[key].forEach((src, j) => {
+        if (!(typeof src === 'string' && src.startsWith('data:'))) {
+          next.push(src);
+          return;
+        }
+        const url = moved.get(`${i}|${key}|${j}`);
+        if (url) next.push(url);
+        else if (keepFailures) next.push(src);
+      });
+      out[key] = next;
+    });
+    INLINE_SCALAR_KEYS.forEach((key) => {
+      const src = out[key];
+      if (typeof src !== 'string' || !src.startsWith('data:')) return;
+      const url = moved.get(`${i}|${key}|-1`);
+      if (url) out[key] = url;
+      else if (!keepFailures) delete out[key];
+    });
+    return out;
+  }
+
+  const items = state.items;
+  const dbState = { ...state, items: items.map((item, i) => project(item, i, true)) };
+  const responseState = { ...state, items: items.map((item, i) => project(item, i, false)) };
+  if (moved.size) await writeState(dbState);
+  return responseState;
 }
 
 /** The whole class document. One row keeps the sync model honest: one shared copy.
-    No row yet is normal, it returns the empty shape rather than failing. */
+   No row yet is normal, it returns the empty shape rather than failing.
+   Inline file payloads never leave this function: they are moved to Storage
+   (best effort) and the returned state carries only short URLs, so a board
+   read is text sized no matter what an old row still contains. */
 export async function readState() {
   if (!isConfigured()) return null;
   const { data, error } = await client().from(TABLE).select('data').eq('id', ROW_ID).maybeSingle();
   if (error) throw error;
-  const publicFiles = (() => {
-    const src = data && data.data ? data.data : {};
-    const list = Array.isArray(src.files) ? src.files : [];
-    return list
-      .filter((f) => f && typeof f === "object" && f.publicUrl && typeof f.publicUrl === "string")
-      .map((f) => ({ ...f, size: Number(f.size) || 0 }));
-  })();
-  const clean = { ...EMPTY, ...data.data };
-  clean.files = publicFiles;
-  return clean;
+  const doc = data && data.data && typeof data.data === 'object' ? data.data : {};
+  const state = { ...EMPTY, ...doc };
+  return migrateInlineFiles(state);
 }
 
-/** File metadata only. Never base64 byte payloads, so the row stays small and
-   the browser's first paint of the board is a read of text fields only. The
-   URL is produced on the server with getPublicUrl and stored verbatim, keeping
-   a predictable Vercel/Workers read path. */
-export async function upsertAttachment({ assignmentId, file, pathHint }) {
-  const supabase = client();
-  const ext = String(file.name || "file").split(".").pop()?.toLowerCase() || "pdf";
-  const contentType = file.type || (ext === "pdf" ? "application/pdf" : "application/octet-stream");
-  const bucket = process.env.SUPABASE_ASSIGNMENT_BUCKET || "assignments";
-  const sizeRows = await supabase.from("storage_files").select("size").eq("bucket", bucket).eq("path", pathHint).maybeSingle();
-  let size = Number((sizeRows && sizeRows.data && sizeRows.data.size) || file.size || 0);
-  if (Number.isNaN(size)) size = file.size || 0;
-  const { data, error } = await supabase
-    .from("storage_files")
-    .upsert(
-      {
-        bucket,
-        path: pathHint || "assignments/" + Date.now().toString(36) + "-" + uid() + "." + ext,
-        name: file.name || "untitled." + ext,
-        contentType,
-        size,
-        mime: contentType,
-      },
-      { onConflict: "bucket,path" }
-    );
-  if (error) throw error;
-  const publicUrl = supabase.storage
-    .from(data.bucket)
-    .getPublicUrl(data.path)
-    .data.publicUrl || "";
-  if (!publicUrl) throw new Error("getPublicUrl returned nothing.");
-  return { ...data, publicUrl };
-}
+/* File storage note: attachments live in the Supabase Storage bucket
+   "assignments". Rows only ever hold the bucket's public URL (checked by
+   isAttachmentUrl() on every write), and readState() moves any inline payload
+   an old row still carries out to Storage. There is no storage_files table and
+   no separate metadata row: the board document is the index. */
 
 /**
  * What the browser is allowed to see. The shared document keeps whatever the
@@ -409,38 +535,6 @@ export async function writeState(next) {
     .upsert({ id: ROW_ID, data: withHashedSecrets(next), updated_at: new Date().toISOString() });
   if (error) throw error;
   return true;
-}
-
-/* Persisted file metadata is now keyed by assignment id. writeState only ever
-   saves the plain public-url list, so a board read is a handful of text fields
-   and two URL strings per file instead of a base64 blob the size of the image. */
-export async function saveFiles(assignmentId, files) {
-  if (!isConfigured()) return [];
-  const bucket = process.env.SUPABASE_ASSIGNMENT_BUCKET || "assignments";
-  const rows = [];
-  for (const f of Array.isArray(files) ? files : []) {
-    if (!f || !f.src || !String(f.src).startsWith("https://")) continue;
-    const { data, error } = await client()
-      .from("storage_files")
-      .upsert(
-        {
-          assignment_id: String(assignmentId),
-          bucket,
-          path: "public" + f.src.split("https://<project-ref>.supabase.co/storage/v1/object/public/").pop() || "",
-          name: f.name || "file." + (f.ext || "txt"),
-          mime: f.type || "application/octet-stream",
-          size: Number(f.size) || 0,
-          publicUrl: f.src,
-        },
-        { onConflict: "assignment_id" }
-      );
-    if (error) {
-      console.error('[api] saveFiles upsert error', error.message);
-      continue;
-    }
-    rows.push(data && data.publicUrl ? { ...data, assignmentId: String(assignmentId) } : f);
-  }
-  return rows;
 }
 
 export async function appendAttendance(entry) {

@@ -598,7 +598,98 @@ const tests = [
     }),
 
   () =>
-    check('19 logout invalidates the session server side and is idempotent', async () => {
+    check('19 files live in Storage: inline base64 moved out, links are the only currency', async () => {
+      /* An old row still holding a data: URL, seeded directly so the accounts
+         stay intact - exactly what a legacy board looks like on arrival. */
+      const inlinePng =
+        'data:image/png;base64,' +
+        Buffer.from('\x89PNG\r\n\x1a\nfake-png-bytes-for-the-migration-test').toString('base64');
+      const seeded = await httpRaw('POST', '/sb/rest/v1/_test/append-item', {
+        headers: { ...JSON_HEADERS },
+        body: JSON.stringify({
+          item: {
+            id: 'legacy-inline-1',
+            subject: 'Business Economics',
+            title: 'Legacy card',
+            description: 'Carries an inline picture.',
+            solution: '',
+            dueDate: '',
+            status: 'pending',
+            ownerId: '',
+            ownerName: '',
+            images: [inlinePng],
+            solutionImages: [],
+            createdAt: Date.now(),
+          },
+        }),
+      });
+      expect(seeded.status === 200, `seed: ${seeded.status}`);
+
+      /* A read must never return the payload: instant load is the contract. */
+      const state = await httpRaw('GET', '/api/state', {});
+      expect(state.status === 200, `state: ${state.status}`);
+      expect(!state.raw.includes('data:image'), 'a read still carries inline base64');
+      const migratedItem = state.json.items.find((i) => i.id === 'legacy-inline-1');
+      expect(!!migratedItem, 'legacy card missing after read');
+      expect(
+        Array.isArray(migratedItem.images) &&
+          migratedItem.images.length === 1 &&
+          migratedItem.images[0].startsWith(`${BASE}/sb/storage/v1/object/public/assignments/`),
+        `image was not moved to Storage: ${JSON.stringify(migratedItem.images)}`,
+      );
+
+      /* The row itself was rewritten: the database holds a link, not bytes. */
+      const dump = await httpRaw('GET', '/sb/rest/v1/_test/dump', {});
+      const storedItem = dump.json.tables.class_state[0].data.items.find((i) => i.id === 'legacy-inline-1');
+      expect(
+        storedItem.images[0].startsWith('http') && !storedItem.images[0].startsWith('data:'),
+        'the database row still holds base64',
+      );
+      expect(
+        dump.json.storage.some((o) => o.key.startsWith('assignments/') && o.contentType === 'image/png'),
+        'the moved file never landed in the fake bucket',
+      );
+
+      /* saveBoard accepts a Storage link, refuses inline base64 and refuses
+         any other origin. */
+      const base = {
+        id: 'storage-accept-1',
+        subject: 'Business Economics',
+        title: 'Attachment card',
+        description: 'Links only.',
+        solution: '',
+        dueDate: '',
+        status: 'pending',
+        ownerId: '',
+        ownerName: '',
+        images: [migratedItem.images[0]],
+        solutionImages: [],
+        createdAt: Date.now(),
+      };
+      const good = await jsonPost('/api/action', { type: 'saveBoard', payload: [base] }, { cookie: adminCookie });
+      expect(good.status === 200, `storage link refused: ${good.status} ${good.raw}`);
+
+      const inline = await jsonPost(
+        '/api/action',
+        { type: 'saveBoard', payload: [{ ...base, id: 'storage-inline-1', images: [inlinePng] }] },
+        { cookie: adminCookie },
+      );
+      expect(inline.status === 400, `inline base64 accepted: ${inline.status}`);
+      expect(
+        String((inline.json && inline.json.reason) || '').toLowerCase().includes('base64'),
+        `inline rejection reason unclear: ${inline.raw}`,
+      );
+
+      const foreign = await jsonPost(
+        '/api/action',
+        { type: 'saveBoard', payload: [{ ...base, id: 'storage-foreign-1', images: ['https://evil.example/x.png'] }] },
+        { cookie: adminCookie },
+      );
+      expect(foreign.status === 400, `foreign URL accepted: ${foreign.status}`);
+    }),
+
+  () =>
+    check('20 logout invalidates the session server side and is idempotent', async () => {
       const { token } = await loginAs(STUDENT.username, STUDENT_NEXT);
       expect(!!token, 'student login failed');
       const cookie = `bba_session=${token}`;
@@ -620,7 +711,7 @@ const tests = [
     }),
 
   () =>
-    check('20 server errors are generic: no stack traces, no driver internals', async () => {
+    check('21 server errors are generic: no stack traces, no driver internals', async () => {
       await httpRaw('POST', '/sb/rest/v1/_test/mode', {
         headers: { ...JSON_HEADERS },
         body: JSON.stringify({ mode: 'fail' }),

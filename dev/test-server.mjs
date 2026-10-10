@@ -208,15 +208,21 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/sb' || url.pathname.startsWith('/sb/')) {
       let body = null;
+      let raw = null;
       if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT') {
-        const raw = await readBody(req, MAX_BODY_BYTES);
+        raw = await readBody(req, MAX_BODY_BYTES);
+        if (raw.oversized) {
+          res.statusCode = 413;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          return res.end(JSON.stringify({ message: 'Payload too large', statusCode: 413 }));
+        }
         try {
           body = JSON.parse(raw.toString('utf8') || 'null');
         } catch (err) {
-          body = null;
+          body = null; /* multipart Storage uploads carry a raw body, not JSON */
         }
       }
-      return await fake.handle(req, res, url.searchParams, body);
+      return await fake.handle(req, res, url.searchParams, body, raw);
     }
 
     if (url.pathname.startsWith('/api/')) {

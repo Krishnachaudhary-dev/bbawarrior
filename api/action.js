@@ -1,4 +1,4 @@
-import { appendAttendance, authenticate, broadcastChange, describeError, isConfigured, readState, requireAdmin, writeState } from './_db.js';
+import { appendAttendance, authenticate, broadcastChange, describeError, isAttachmentUrl, isConfigured, readState, requireAdmin, writeState } from './_db.js';
 import { guardWrite, isPlainObject, rateLimit, rateLimited, send } from './_security.js';
 
 /**
@@ -35,9 +35,7 @@ const RATE_MAX = 60;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES = new Set(['pending', 'in-progress', 'completed']);
-const DATA_URL = /^data:(image\/|application\/pdf)/;
 const MAX_IMAGES = 6;
-const MAX_IMAGE_CHARS = 700000;
 const MAX_ITEMS = 300;
 
 const ITEM_KEYS = new Set([
@@ -127,11 +125,15 @@ function num(value) {
   return n;
 }
 
+/* Attachment lists are URL lists. Files live in the assignments Storage
+   bucket, so a row can only ever point at our own Storage (public or signed):
+   inline base64 and foreign hotlinks are refused at the door, which is what
+   keeps the document text sized and a card read instant. */
 function imageList(value) {
   if (!Array.isArray(value) || value.length > MAX_IMAGES) return null;
   const out = [];
   for (const src of value) {
-    if (typeof src !== 'string' || src.length > MAX_IMAGE_CHARS || !DATA_URL.test(src)) return null;
+    if (!isAttachmentUrl(src)) return null;
     out.push(src);
   }
   return out;
@@ -160,6 +162,13 @@ function sanitiseBoard(payload) {
     if (ownerId === null) return { reason: 'An owner id is not valid.' };
     const ownerName = typeof raw.ownerName === 'string' && raw.ownerName.length <= 40 ? raw.ownerName : null;
     if (ownerName === null) return { reason: 'An owner name is not valid.' };
+    const inline = [
+      ...(Array.isArray(raw.images) ? raw.images : []),
+      ...(Array.isArray(raw.solutionImages) ? raw.solutionImages : []),
+    ].some((src) => typeof src === 'string' && src.startsWith('data:'));
+    if (inline) {
+      return { reason: 'Inline base64 pictures are no longer stored - upload the file and send its Storage link.' };
+    }
     const images = imageList(raw.images);
     if (images === null) return { reason: 'The pictures of an assignment are not valid.' };
     const solutionImages = imageList(raw.solutionImages);
